@@ -10,6 +10,9 @@ pip install -e .
 
 # 開発用（テスト含む）
 pip install -e ".[dev]"
+
+# GUI付き（Gradio）
+pip install -e ".[gui]"
 ```
 
 ### 依存ライブラリ
@@ -18,9 +21,45 @@ pip install -e ".[dev]"
 - NumPy >= 1.20.0
 - SciPy >= 1.7.0
 - OpenCV >= 4.5.0
+- Click >= 8.0
+- (GUI) Gradio >= 4.0
 - (本番運用時) PyTorch >= 1.10.0 + CUDA >= 11.0, MMPose >= 1.0.0, VideoPose3D
 
 ## 使い方
+
+### CLI
+
+```bash
+# 動画→BVHモーションデータに変換
+vme input.mp4 -o output.bvh
+
+# フォーマット指定（bvh/fbx/json）
+vme input.mp4 -o output.fbx -f fbx
+
+# パラメータ調整
+vme input.mp4 -o output.bvh --fps 60 --threshold 0.5 --smoothing 7 --batch-size 16
+
+# 不要な関節を除外（ワイルドカード対応）
+vme input.mp4 -o output.bvh --remove-joints "left_hand_*,right_hand_*"
+
+# 動画メタデータのみ表示
+vme input.mp4 --info
+
+# ヘルプ
+vme --help
+```
+
+### Web GUI (Gradio)
+
+```bash
+# 起動（ブラウザで http://localhost:7860 を開く）
+vme-gui
+
+# または
+python -m video_motion_extraction.gui
+```
+
+動画をアップロードし、FPS・信頼度閾値・スムージング窓・出力フォーマット等を設定して実行。処理完了後にファイルをダウンロードできる。
 
 ### Python APIから使う
 
@@ -87,6 +126,8 @@ src/video_motion_extraction/
 ├── config.py           # 設定クラス (ExtractorConfig, ProcessingConfig等)
 ├── errors.py           # 例外 (VideoLoadError, GPUMemoryError)
 ├── validators.py       # 入力検証 (パストラバーサル防止、フォーマット検証)
+├── cli.py              # CLIエントリポイント (click)
+├── gui.py              # Gradio WebUI
 ├── logger.py           # VibeLogger互換ロギング
 ├── video_extractor.py  # フレーム抽出 (OpenCV)
 ├── pose_estimator.py   # 2Dポーズ推定 (MMPose)

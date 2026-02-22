@@ -10,13 +10,19 @@ dependencies = [
     "numpy>=1.20.0",
     "scipy>=1.7.0",
     "opencv-python>=4.5.0",
+    "click>=8.0",
 ]
 
 [project.optional-dependencies]
+gui = ["gradio>=4.0"]
 dev = [
     "pytest",
     "hypothesis",
 ]
+
+[project.scripts]
+vme = "video_motion_extraction.cli:main"
+vme-gui = "video_motion_extraction.gui:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
