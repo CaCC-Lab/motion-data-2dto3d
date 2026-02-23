@@ -47,6 +47,9 @@ Thumbs.db
 # Tooling
 .claude/
 
+# Local addons / downloads
+addon.py
+
 # WSL / Windows metadata
 *:Zone.Identifier
 wsl.localhost/
