@@ -1,7 +1,7 @@
 """設定クラス定義."""
 
 from dataclasses import dataclass, field
-from typing import List
+from typing import List, Optional
 
 
 @dataclass
@@ -15,6 +15,7 @@ class PoseModelConfig:
     model_name: str = "mmpose_hrnet"
     batch_size: int = 32
     device: str = "cpu"
+    checkpoint_path: Optional[str] = None
 
 
 @dataclass
@@ -30,3 +31,5 @@ class Converter3DConfig:
     model_name: str = "videopose3d"
     device: str = "cpu"
     quality_threshold: float = 0.5
+    weights_path: Optional[str] = None
+    receptive_field: int = 243

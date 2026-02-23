@@ -19,6 +19,16 @@ from video_motion_extraction.video_extractor import VideoExtractor
 from video_motion_extraction.pose_estimator import PoseEstimator
 from video_motion_extraction.data_processor import INTERPOLATED_CONFIDENCE, DataProcessor
 from video_motion_extraction.converter_3d import Converter3D
+from video_motion_extraction.joint_mapping import (
+    COCO_JOINT_NAMES,
+    H36M_HIERARCHY,
+    H36M_JOINT_NAMES,
+    coco_to_h36m_keypoints,
+)
+from video_motion_extraction.quaternion_utils import (
+    normalize_quaternions,
+    positions_to_quaternions,
+)
 
 __all__ = [
     "BoundingBox",
@@ -39,4 +49,10 @@ __all__ = [
     "VideoExtractor",
     "VideoLoadError",
     "VideoMetadata",
+    "COCO_JOINT_NAMES",
+    "H36M_HIERARCHY",
+    "H36M_JOINT_NAMES",
+    "coco_to_h36m_keypoints",
+    "normalize_quaternions",
+    "positions_to_quaternions",
 ]

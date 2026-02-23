@@ -19,6 +19,13 @@ dev = [
     "pytest",
     "hypothesis",
 ]
+gpu = [
+    "torch>=1.10.0",
+    "mmpose>=1.0.0",
+    "mmdet>=3.0.0",
+    "mmcv>=2.0.0",
+    "mmengine>=0.7.0",
+]
 
 [project.scripts]
 vme = "video_motion_extraction.cli:main"

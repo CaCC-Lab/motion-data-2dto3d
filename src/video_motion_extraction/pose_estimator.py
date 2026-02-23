@@ -25,11 +25,37 @@ class PoseEstimator:
     def __init__(self, config: Optional[PoseModelConfig] = None) -> None:
         self._config = config or PoseModelConfig()
         self._joint_names = list(DEFAULT_JOINT_NAMES)
+        self._model_available = False
+        self._inferencer = None
+        self._try_load_model()
         logger.step(
             "PoseEstimator.__init__",
-            context={"config": str(self._config)},
+            context={"config": str(self._config), "model_available": self._model_available},
             ai_todo=["initialize_model"],
         )
+
+    def _try_load_model(self) -> None:
+        """MMPoseInferencerの遅延ロードを試行."""
+        try:
+            from mmpose.apis import MMPoseInferencer
+            inferencer = MMPoseInferencer(
+                pose2d=self._config.checkpoint_path or "human",
+                device=self._config.device,
+            )
+            self._inferencer = inferencer
+            self._model_available = True
+            logger.step(
+                "PoseEstimator._try_load_model",
+                context={"status": "loaded"},
+                ai_todo=[],
+            )
+        except (ImportError, Exception) as exc:
+            self._model_available = False
+            logger.step(
+                "PoseEstimator._try_load_model",
+                context={"status": "fallback_to_stub", "reason": str(exc)},
+                ai_todo=[],
+            )
 
     def detect_person(self, frame: np.ndarray) -> List[BoundingBox]:
         """フレーム内の人物を検出."""
@@ -106,9 +132,78 @@ class PoseEstimator:
     def _infer_batch(
         self, frames: List[np.ndarray], batch_size: int
     ) -> Pose2DSequence:
-        """バッチ推論の実行（スタブ実装）."""
+        """バッチ推論の実行（モデル利用可能時はMMPose、それ以外はスタブ）."""
+        if self._model_available:
+            return self._infer_batch_real(frames, batch_size)
+        return self._infer_batch_stub(frames, batch_size)
+
+    def _infer_batch_real(
+        self, frames: List[np.ndarray], batch_size: int
+    ) -> Pose2DSequence:
+        """MMPoseによる本物のバッチ推論."""
         logger.step(
-            "_infer_batch",
+            "_infer_batch_real",
+            context={"num_frames": len(frames), "batch_size": batch_size},
+            ai_todo=["run_mmpose_inference"],
+        )
+        pose_frames: List[Pose2DFrame] = []
+
+        for batch_start in range(0, len(frames), batch_size):
+            batch = frames[batch_start:batch_start + batch_size]
+            results = self._inferencer(batch, return_vis=False)
+
+            for i, result in enumerate(results):
+                frame_idx = batch_start + i
+                preds = result.get("predictions", [result])
+                if isinstance(preds, list) and len(preds) > 0:
+                    pred = preds[0]
+                else:
+                    pred = preds
+
+                # MMPoseの出力形式を解析
+                if isinstance(pred, list) and len(pred) > 0:
+                    person = pred[0]
+                elif isinstance(pred, dict):
+                    person = pred
+                else:
+                    person = {}
+
+                keypoints = np.array(
+                    person.get("keypoints", np.zeros((17, 2))),
+                    dtype=np.float32,
+                )
+                scores = np.array(
+                    person.get("keypoint_scores", np.ones(17) * 0.5),
+                    dtype=np.float32,
+                )
+
+                if keypoints.ndim == 3:
+                    keypoints = keypoints[0]
+                if scores.ndim == 2:
+                    scores = scores[0]
+
+                h, w = batch[i % len(batch)].shape[:2]
+                pose_frames.append(
+                    Pose2DFrame(
+                        frame_id=frame_idx,
+                        keypoints=keypoints[:17, :2],
+                        confidence=np.clip(scores[:17], 0.0, 1.0),
+                        bounding_box=BoundingBox(0.0, 0.0, float(w), float(h)),
+                    )
+                )
+
+        return Pose2DSequence(
+            frames=pose_frames,
+            joint_names=list(self._joint_names),
+            fps=30.0,
+        )
+
+    def _infer_batch_stub(
+        self, frames: List[np.ndarray], batch_size: int
+    ) -> Pose2DSequence:
+        """スタブ実装によるバッチ推論（フォールバック）."""
+        logger.step(
+            "_infer_batch_stub",
             context={"num_frames": len(frames), "batch_size": batch_size},
             ai_todo=["run_model_inference"],
         )

@@ -1,0 +1,13 @@
+  1. addon.py のリッスンアドレスを変更
+
+  ダウンロードした addon.py をテキストエディタで開き、127.0.0.1 を 0.0.0.0
+  に変更してから、Blenderにインストールし直してください。
+
+  2. Windowsファイアウォールでポート許可
+
+  PowerShell を管理者として実行し:
+  New-NetFirewallRule -DisplayName "BlenderMCP" -Direction Inbound -LocalPort 9876 -Protocol TCP -Action
+   Allow
+
+  両方完了したら、Blenderで Start MCP Server を押して、Claude Codeを再起動してください。
+  
