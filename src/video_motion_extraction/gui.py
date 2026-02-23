@@ -40,6 +40,8 @@ def process_video(
     remove_joints: str,
     output_format: str,
     batch_size: int,
+    bvh_mode: str = "position",
+    smooth_3d: float = 1.0,
 ) -> Tuple[Optional[str], str]:
     """パイプライン実行してファイルパスとログを返す.
 
@@ -88,7 +90,10 @@ def process_video(
 
         # 4. 3D変換 & エクスポート
         log_lines.append("Converting to 3D...")
-        converter = Converter3D(Converter3DConfig())
+        converter = Converter3D(Converter3DConfig(
+            bvh_mode=bvh_mode,
+            smooth_3d_sigma=smooth_3d,
+        ))
         motion_3d = converter.convert_to_3d(pose_2d)
 
         suffix = f".{output_format}"
@@ -123,6 +128,11 @@ def create_ui():
                     remove_joints = gr.Textbox(label="除外関節 (カンマ区切り)", placeholder="left_hand_*,right_hand_*")
                     output_format = gr.Dropdown(SUPPORTED_FORMATS, value="bvh", label="出力フォーマット")
                     batch_size = gr.Slider(1, 128, value=32, step=1, label="バッチサイズ")
+                    bvh_mode = gr.Radio(
+                        ["position", "rotation"], value="position",
+                        label="BVHモード",
+                    )
+                    smooth_3d = gr.Slider(0.0, 5.0, value=1.0, step=0.1, label="3Dスムージングσ")
 
                 run_btn = gr.Button("実行", variant="primary")
 
@@ -132,7 +142,7 @@ def create_ui():
 
         run_btn.click(
             fn=process_video,
-            inputs=[video_input, fps, threshold, smoothing, remove_joints, output_format, batch_size],
+            inputs=[video_input, fps, threshold, smoothing, remove_joints, output_format, batch_size, bvh_mode, smooth_3d],
             outputs=[output_file, status_log],
         )
 

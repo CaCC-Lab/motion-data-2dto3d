@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 import numpy as np
+from scipy.ndimage import gaussian_filter1d
 
 from video_motion_extraction import logger
 from video_motion_extraction.config import Converter3DConfig
@@ -106,6 +107,14 @@ class Converter3D:
         # 1. 2Dキーポイントを(T,17,2)にスタック
         kps_2d = np.stack([f.keypoints for f in pose_2d.frames], axis=0)  # (T, 17, 2)
 
+        # 1.5. 信頼度ベースフィルタリング: 低信頼度関節を前フレームで補間
+        if self._config.confidence_filter:
+            for t in range(len(pose_2d.frames)):
+                conf = pose_2d.frames[t].confidence  # (17,)
+                low_conf = conf < 0.3
+                if t > 0 and np.any(low_conf):
+                    kps_2d[t, low_conf] = kps_2d[t - 1, low_conf]
+
         # 2. COCO→H36M関節順に変換
         kps_h36m = coco_to_h36m_keypoints(kps_2d)  # (T, 17, 2)
 
@@ -127,8 +136,26 @@ class Converter3D:
 
         positions_3d = output_3d.cpu().numpy()[0]  # (T, 17, 3)
 
-        # 5. mm→m変換（VideoPose3Dの出力はmmスケール）
-        positions_3d = positions_3d / 1000.0
+        # 5. 人体スケールに正規化
+        # VideoPose3D出力は正規化入力に対する相対座標。
+        # 全フレームの高さ方向レンジから目標身長(1.7m)にスケーリング
+        body_range = np.max(positions_3d[:, :, 1]) - np.min(positions_3d[:, :, 1])
+        if body_range > 1e-6:
+            target_height = 1.7  # meters
+            scale_factor = target_height / body_range
+            positions_3d = positions_3d * scale_factor
+
+        # Y軸を上方向に補正: 最小Y=0（足が地面に接地）
+        y_min = np.min(positions_3d[:, :, 1])
+        positions_3d[:, :, 1] -= y_min
+
+        # 5.5. 3Dテンポラルスムージング
+        if self._config.smooth_3d_sigma > 0:
+            for j in range(17):
+                for axis in range(3):
+                    positions_3d[:, j, axis] = gaussian_filter1d(
+                        positions_3d[:, j, axis], sigma=self._config.smooth_3d_sigma
+                    )
 
         # 6. クォータニオン回転計算
         motion_frames: List[Motion3DFrame] = []
@@ -230,9 +257,103 @@ class Converter3D:
         )
 
         if has_hierarchy:
-            self._export_bvh_hierarchical(motion_data, output_path)
+            if self._config.bvh_mode == "position":
+                self._export_bvh_position(motion_data, output_path)
+            else:
+                self._export_bvh_hierarchical(motion_data, output_path)
         else:
             self._export_bvh_flat(motion_data, output_path)
+
+    def _export_bvh_position(self, motion_data: Motion3DData, output_path: str) -> None:
+        """ポジションベースBVH出力: 全関節にXYZ位置チャンネルを持たせる."""
+        hierarchy = motion_data.joint_hierarchy
+        joint_names = motion_data.joint_names
+        root = joint_names[0]
+
+        # 子ノードのマッピング
+        children: Dict[str, List[str]] = {name: [] for name in joint_names}
+        for child, parent in hierarchy.items():
+            if parent in children:
+                children[parent].append(child)
+
+        # BVH出力順序を収集
+        ordered_joints: List[str] = []
+
+        def _collect_order(joint: str) -> None:
+            ordered_joints.append(joint)
+            for child in children.get(joint, []):
+                _collect_order(child)
+
+        _collect_order(root)
+
+        # ボーンオフセット（フレーム0基準）
+        first_frame = motion_data.frames[0]
+        name_to_idx = {name: i for i, name in enumerate(joint_names)}
+
+        def _bone_offset(child: str, parent: str) -> np.ndarray:
+            ci = name_to_idx.get(child, 0)
+            pi = name_to_idx.get(parent, 0)
+            return first_frame.positions[ci] - first_frame.positions[pi]
+
+        lines: List[str] = ["HIERARCHY"]
+
+        def _write_joint(joint: str, depth: int, is_root: bool = False) -> None:
+            indent = "  " * depth
+            if is_root:
+                lines.append(f"{indent}ROOT {joint}")
+            else:
+                lines.append(f"{indent}JOINT {joint}")
+            lines.append(f"{indent}{{")
+
+            if is_root:
+                lines.append(f"{indent}  OFFSET 0.000000 0.000000 0.000000")
+                lines.append(
+                    f"{indent}  CHANNELS 6 Xposition Yposition Zposition "
+                    "Zrotation Xrotation Yrotation"
+                )
+            else:
+                parent = hierarchy.get(joint, root)
+                offset = _bone_offset(joint, parent)
+                lines.append(f"{indent}  OFFSET {offset[0]:.6f} {offset[1]:.6f} {offset[2]:.6f}")
+                lines.append(f"{indent}  CHANNELS 3 Xposition Yposition Zposition")
+
+            kids = children.get(joint, [])
+            if kids:
+                for child in kids:
+                    _write_joint(child, depth + 1)
+            else:
+                lines.append(f"{indent}  End Site")
+                lines.append(f"{indent}  {{")
+                lines.append(f"{indent}    OFFSET 0.000000 0.050000 0.000000")
+                lines.append(f"{indent}  }}")
+
+            lines.append(f"{indent}}}")
+
+        _write_joint(root, 0, is_root=True)
+
+        # MOTIONセクション
+        lines.append("MOTION")
+        lines.append(f"Frames: {len(motion_data.frames)}")
+        frame_time = 1.0 / motion_data.fps if motion_data.fps > 0 else 0.033
+        lines.append(f"Frame Time: {frame_time:.6f}")
+
+        for frame in motion_data.frames:
+            values: List[str] = []
+            # ルート: 位置 + 回転(0固定)
+            root_idx = name_to_idx.get(root, 0)
+            pos = frame.positions[root_idx]
+            values.extend([f"{pos[0]:.6f}", f"{pos[1]:.6f}", f"{pos[2]:.6f}"])
+            values.extend(["0.000000", "0.000000", "0.000000"])  # 回転は0固定
+
+            # 子関節: 位置のみ
+            for joint in ordered_joints[1:]:
+                idx = name_to_idx.get(joint, 0)
+                p = frame.positions[idx]
+                values.extend([f"{p[0]:.6f}", f"{p[1]:.6f}", f"{p[2]:.6f}"])
+
+            lines.append(" ".join(values))
+
+        Path(output_path).write_text("\n".join(lines))
 
     def _export_bvh_hierarchical(self, motion_data: Motion3DData, output_path: str) -> None:
         """階層構造付きBVH出力."""

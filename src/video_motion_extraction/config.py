@@ -33,3 +33,6 @@ class Converter3DConfig:
     quality_threshold: float = 0.5
     weights_path: Optional[str] = None
     receptive_field: int = 243
+    bvh_mode: str = "position"          # "position" or "rotation"
+    smooth_3d_sigma: float = 1.0        # ガウシアンスムージングσ (0=無効)
+    confidence_filter: bool = True       # 低信頼度2Dフレームのフィルタリング

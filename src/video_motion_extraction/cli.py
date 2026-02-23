@@ -49,6 +49,11 @@ def _detect_format(output_path: str) -> str:
 @click.option("--smoothing", type=int, default=5, show_default=True, help="スムージング窓サイズ")
 @click.option("--remove-joints", type=str, default=None, help="除外する関節パターン (カンマ区切り)")
 @click.option("--batch-size", type=int, default=32, show_default=True, help="GPU バッチサイズ")
+@click.option(
+    "--bvh-mode", type=click.Choice(["position", "rotation"]),
+    default="position", show_default=True, help="BVH出力モード",
+)
+@click.option("--smooth-3d", type=float, default=1.0, show_default=True, help="3Dスムージングσ (0=無効)")
 @click.option("--info", is_flag=True, default=False, help="動画メタデータのみ表示して終了")
 def main(
     video_path: str,
@@ -59,6 +64,8 @@ def main(
     smoothing: int,
     remove_joints: Optional[str],
     batch_size: int,
+    bvh_mode: str,
+    smooth_3d: float,
     info: bool,
 ) -> None:
     """動画から3Dモーションデータを抽出する.
@@ -90,6 +97,8 @@ def main(
             smoothing=smoothing,
             joints_to_remove=joints_to_remove,
             batch_size=batch_size,
+            bvh_mode=bvh_mode,
+            smooth_3d=smooth_3d,
         )
     except (ValidationError, VideoLoadError) as exc:
         logger.error("cli.main", what="Input error", why=str(exc), how="Check input file and parameters")
@@ -127,6 +136,8 @@ def _run_pipeline(
     smoothing: int,
     joints_to_remove: list,
     batch_size: int,
+    bvh_mode: str = "position",
+    smooth_3d: float = 1.0,
 ) -> None:
     """パイプライン実行: VideoExtractor → PoseEstimator → DataProcessor → Converter3D → export."""
     logger.step("cli.pipeline", context={"video_path": video_path, "format": fmt}, ai_todo=["run_full_pipeline"])
@@ -160,7 +171,10 @@ def _run_pipeline(
 
     # 4. 3D変換 & エクスポート
     click.echo("Converting to 3D...")
-    converter = Converter3D(Converter3DConfig())
+    converter = Converter3D(Converter3DConfig(
+        bvh_mode=bvh_mode,
+        smooth_3d_sigma=smooth_3d,
+    ))
     motion_3d = converter.convert_to_3d(pose_2d)
 
     Path(output_path).parent.mkdir(parents=True, exist_ok=True)
