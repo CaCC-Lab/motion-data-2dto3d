@@ -265,71 +265,36 @@ class Converter3D:
             self._export_bvh_flat(motion_data, output_path)
 
     def _export_bvh_position(self, motion_data: Motion3DData, output_path: str) -> None:
-        """ポジションベースBVH出力: 全関節にXYZ位置チャンネルを持たせる."""
-        hierarchy = motion_data.joint_hierarchy
+        """ポジションベースBVH出力（フラット階層）.
+
+        Blenderのimport_bvhは位置チャンネルを以下のように処理する:
+          pose_bone.location = bone_rest_matrix_inv @ (bvh_loc - rest_head_local)
+        rest_head_local=OFFSET, bone_rest_matrix=ボーンのレスト回転行列。
+        全関節をルート直下にOFFSET=0で配置し、End SiteをY方向に統一すれば
+        bone_rest_matrix≈単位行列となり、bvh_locがワールド位置として使える。
+        """
         joint_names = motion_data.joint_names
         root = joint_names[0]
-
-        # 子ノードのマッピング
-        children: Dict[str, List[str]] = {name: [] for name in joint_names}
-        for child, parent in hierarchy.items():
-            if parent in children:
-                children[parent].append(child)
-
-        # BVH出力順序を収集
-        ordered_joints: List[str] = []
-
-        def _collect_order(joint: str) -> None:
-            ordered_joints.append(joint)
-            for child in children.get(joint, []):
-                _collect_order(child)
-
-        _collect_order(root)
-
-        # ボーンオフセット（フレーム0基準）
-        first_frame = motion_data.frames[0]
         name_to_idx = {name: i for i, name in enumerate(joint_names)}
+        root_idx = name_to_idx[root]
 
-        def _bone_offset(child: str, parent: str) -> np.ndarray:
-            ci = name_to_idx.get(child, 0)
-            pi = name_to_idx.get(parent, 0)
-            return first_frame.positions[ci] - first_frame.positions[pi]
+        lines: List[str] = ["HIERARCHY", f"ROOT {root}", "{"]
+        lines.append("  OFFSET 0.000000 0.000000 0.000000")
+        lines.append("  CHANNELS 6 Xposition Yposition Zposition Zrotation Xrotation Yrotation")
 
-        lines: List[str] = ["HIERARCHY"]
+        # 全子関節をルート直下にOFFSET=0でフラット配置
+        for jname in joint_names[1:]:
+            lines.append(f"  JOINT {jname}")
+            lines.append("  {")
+            lines.append("    OFFSET 0.000000 0.000000 0.000000")
+            lines.append("    CHANNELS 3 Xposition Yposition Zposition")
+            lines.append("    End Site")
+            lines.append("    {")
+            lines.append("      OFFSET 0.000000 0.100000 0.000000")
+            lines.append("    }")
+            lines.append("  }")
 
-        def _write_joint(joint: str, depth: int, is_root: bool = False) -> None:
-            indent = "  " * depth
-            if is_root:
-                lines.append(f"{indent}ROOT {joint}")
-            else:
-                lines.append(f"{indent}JOINT {joint}")
-            lines.append(f"{indent}{{")
-
-            if is_root:
-                lines.append(f"{indent}  OFFSET 0.000000 0.000000 0.000000")
-                lines.append(
-                    f"{indent}  CHANNELS 6 Xposition Yposition Zposition "
-                    "Zrotation Xrotation Yrotation"
-                )
-            else:
-                parent = hierarchy.get(joint, root)
-                offset = _bone_offset(joint, parent)
-                lines.append(f"{indent}  OFFSET {offset[0]:.6f} {offset[1]:.6f} {offset[2]:.6f}")
-                lines.append(f"{indent}  CHANNELS 3 Xposition Yposition Zposition")
-
-            kids = children.get(joint, [])
-            if kids:
-                for child in kids:
-                    _write_joint(child, depth + 1)
-            else:
-                lines.append(f"{indent}  End Site")
-                lines.append(f"{indent}  {{")
-                lines.append(f"{indent}    OFFSET 0.000000 0.050000 0.000000")
-                lines.append(f"{indent}  }}")
-
-            lines.append(f"{indent}}}")
-
-        _write_joint(root, 0, is_root=True)
+        lines.append("}")
 
         # MOTIONセクション
         lines.append("MOTION")
@@ -337,19 +302,24 @@ class Converter3D:
         frame_time = 1.0 / motion_data.fps if motion_data.fps > 0 else 0.033
         lines.append(f"Frame Time: {frame_time:.6f}")
 
+        # OFFSET=0, End Site Y方向 → bone_rest_matrix ≈ I
+        # Blender処理: pose_loc = bone_rest_matrix_inv @ (bvh_loc - rest_head_local)
+        # → pose_loc = bvh_loc (OFFSET=0, matrix=I)
+        # 子ボーンはルートにペアレントされるため:
+        #   child_world = root_world + pose_loc = root_world + bvh_loc
+        # よって: bvh_loc = child_world - root_world（ルート相対位置）
         for frame in motion_data.frames:
             values: List[str] = []
-            # ルート: 位置 + 回転(0固定)
-            root_idx = name_to_idx.get(root, 0)
-            pos = frame.positions[root_idx]
-            values.extend([f"{pos[0]:.6f}", f"{pos[1]:.6f}", f"{pos[2]:.6f}"])
-            values.extend(["0.000000", "0.000000", "0.000000"])  # 回転は0固定
+            # ルート: 絶対位置 + 回転(0固定)
+            root_pos = frame.positions[root_idx]
+            values.extend([f"{root_pos[0]:.6f}", f"{root_pos[1]:.6f}", f"{root_pos[2]:.6f}"])
+            values.extend(["0.000000", "0.000000", "0.000000"])
 
-            # 子関節: 位置のみ
-            for joint in ordered_joints[1:]:
-                idx = name_to_idx.get(joint, 0)
-                p = frame.positions[idx]
-                values.extend([f"{p[0]:.6f}", f"{p[1]:.6f}", f"{p[2]:.6f}"])
+            # 子関節: ルートからの相対位置
+            for jname in joint_names[1:]:
+                idx = name_to_idx[jname]
+                rel = frame.positions[idx] - root_pos
+                values.extend([f"{rel[0]:.6f}", f"{rel[1]:.6f}", f"{rel[2]:.6f}"])
 
             lines.append(" ".join(values))
 
