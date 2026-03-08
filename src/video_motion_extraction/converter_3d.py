@@ -155,9 +155,6 @@ class Converter3D:
         # Y軸反転: VideoPose3Dは Y-down（画像座標系）→ BVHは Y-up
         positions_3d[:, :, 1] = -positions_3d[:, :, 1]
 
-        # X軸反転: 動画の左右とBVH空間の左右を一致させる
-        positions_3d[:, :, 0] = -positions_3d[:, :, 0]
-
         # Y軸を上方向に補正: 最小Y=0（足が地面に接地）
         y_min = np.min(positions_3d[:, :, 1])
         positions_3d[:, :, 1] -= y_min
@@ -324,15 +321,17 @@ class Converter3D:
         for frame in motion_data.frames:
             values: List[str] = []
             # ルート: 絶対位置 + 回転(0固定)
+            # X軸反転: BlenderのBVHインポートがXを反転するため、
+            # 予め反転して書き出すことで動画と同じ左右になる
             root_pos = frame.positions[root_idx]
-            values.extend([f"{root_pos[0]:.6f}", f"{root_pos[1]:.6f}", f"{root_pos[2]:.6f}"])
+            values.extend([f"{-root_pos[0]:.6f}", f"{root_pos[1]:.6f}", f"{root_pos[2]:.6f}"])
             values.extend(["0.000000", "0.000000", "0.000000"])
 
             # 子関節: ルートからの相対位置
             for jname in joint_names[1:]:
                 idx = name_to_idx[jname]
                 rel = frame.positions[idx] - root_pos
-                values.extend([f"{rel[0]:.6f}", f"{rel[1]:.6f}", f"{rel[2]:.6f}"])
+                values.extend([f"{-rel[0]:.6f}", f"{rel[1]:.6f}", f"{rel[2]:.6f}"])
 
             lines.append(" ".join(values))
 
