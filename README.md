@@ -9,17 +9,13 @@
 
 BVHモーションデータからBlenderで生成した3Dスケルトンアニメーション:
 
-https://github.com/user-attachments/assets/skeleton_render
-
-<video src="data/output/skeleton_render.mp4" controls width="100%"></video>
+https://github.com/user-attachments/assets/3ab7ef67-0e80-4b95-bc0e-e0f2e6d48b76
 
 ### パイプラインデモ
 
 入力動画から3Dモーションデータ抽出までの全工程:
 
-https://github.com/user-attachments/assets/portfolio_demo
-
-<video src="data/output/portfolio_demo.mp4" controls width="100%"></video>
+https://github.com/user-attachments/assets/07ce5dd8-6285-45dc-804a-c694f78bfd8d
 
 > サンプル: 動画入力 → 2Dポーズ推定 → データ補完 → 3D変換 → BVH出力 → Blenderでアニメーション再生
 
