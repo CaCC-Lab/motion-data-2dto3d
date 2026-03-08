@@ -5,11 +5,23 @@
 
 ## デモ
 
-入力動画（上段）から3Dスケルトンアニメーション（下段）を自動生成:
+### スケルトンレンダリング
 
-![Pipeline Demo](docs/demo_pipeline.png)
+BVHモーションデータからBlenderで生成した3Dスケルトンアニメーション:
 
-> サンプル: 野球バッターのスイング動画 → BVH形式の3Dモーションデータ → Blenderでアニメーション再生
+https://github.com/user-attachments/assets/skeleton_render
+
+<video src="data/output/skeleton_render.mp4" controls width="100%"></video>
+
+### パイプラインデモ
+
+入力動画から3Dモーションデータ抽出までの全工程:
+
+https://github.com/user-attachments/assets/portfolio_demo
+
+<video src="data/output/portfolio_demo.mp4" controls width="100%"></video>
+
+> サンプル: 動画入力 → 2Dポーズ推定 → データ補完 → 3D変換 → BVH出力 → Blenderでアニメーション再生
 
 ## 処理パイプライン
 
