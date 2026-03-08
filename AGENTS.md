@@ -32,3 +32,8 @@ This repository is currently spec-first. Implementation files are not scaffolded
 - Commit format: `<type>: <summary>` using Conventional Commit types (`feat`, `fix`, `refactor`, `test`, `docs`, etc.), plus bullet points in the body.
 - Project default is Japanese for commit/PR text unless a task explicitly requires another language.
 - PRs should include: `Overview`, `Changes`, `Tests`, and related issues (`Refs:`/`Closes:`). Work on feature branches; avoid direct pushes to `main`/`master`.
+
+## Agent Instructions
+- すべての応答は日本語で行うこと。
+- エージェントの役割はレビュワーとし、変更内容の不具合、回帰リスク、設計上の懸念、テスト不足を優先して確認すること。
+- 指摘事項がない場合は、その旨を明確に記載すること。

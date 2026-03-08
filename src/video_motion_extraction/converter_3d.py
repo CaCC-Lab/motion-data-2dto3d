@@ -118,13 +118,20 @@ class Converter3D:
         # 2. COCO→H36M関節順に変換
         kps_h36m = coco_to_h36m_keypoints(kps_2d)  # (T, 17, 2)
 
-        # 3. Hip中心化 + スケール正規化
-        hip_center = kps_h36m[:, 0:1, :]  # (T, 1, 2)
-        kps_centered = kps_h36m - hip_center
+        # 3. 正規化: VideoPose3D公式方式
+        # 画像解像度で正規化し、Hip中心化
+        # 解像度はbounding_boxから取得（フレームサイズ）
+        res_w = pose_2d.frames[0].bounding_box.width if pose_2d.frames[0].bounding_box else 1920.0
+        res_h = pose_2d.frames[0].bounding_box.height if pose_2d.frames[0].bounding_box else 1080.0
 
-        # スケール正規化: 全体のバウンディングボックスの最大幅で割る
-        scale = np.max(np.abs(kps_centered)) + 1e-6
-        kps_normalized = kps_centered / scale
+        # ピクセル座標を解像度で正規化（公式: x/w - 0.5, y/h - 0.5）
+        kps_normalized = kps_h36m.copy()
+        kps_normalized[:, :, 0] = kps_h36m[:, :, 0] / res_w - 0.5
+        kps_normalized[:, :, 1] = kps_h36m[:, :, 1] / res_h - 0.5
+
+        # Hip中心化
+        hip_center = kps_normalized[:, 0:1, :]  # (T, 1, 2)
+        kps_normalized = kps_normalized - hip_center
 
         # 4. VideoPose3D推論
         t = kps_normalized.shape[0]
@@ -144,6 +151,12 @@ class Converter3D:
             target_height = 1.7  # meters
             scale_factor = target_height / body_range
             positions_3d = positions_3d * scale_factor
+
+        # Y軸反転: VideoPose3Dは Y-down（画像座標系）→ BVHは Y-up
+        positions_3d[:, :, 1] = -positions_3d[:, :, 1]
+
+        # X軸反転: 動画の左右とBVH空間の左右を一致させる
+        positions_3d[:, :, 0] = -positions_3d[:, :, 0]
 
         # Y軸を上方向に補正: 最小Y=0（足が地面に接地）
         y_min = np.min(positions_3d[:, :, 1])
