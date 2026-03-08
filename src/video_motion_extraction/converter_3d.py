@@ -229,8 +229,12 @@ class Converter3D:
         logger.step(
             "export",
             context={"output_path": output_path, "format": format},
-            ai_todo=["select_format", "write_file"],
+            ai_todo=["validate_path", "select_format", "write_file"],
         )
+        # 出力パスのパストラバーサル検証
+        from video_motion_extraction.validators import validate_output_path
+        validate_output_path(output_path)
+
         fmt = format.lower()
         if fmt == "json":
             self._export_json(motion_data, output_path)

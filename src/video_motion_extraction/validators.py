@@ -11,23 +11,40 @@ MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024 * 1024  # 10GB
 MAX_DURATION_SEC = 3600  # 1時間
 
 
+def _check_path_traversal(path: str, label: str) -> Path:
+    """パストラバーサル検証の共通処理."""
+    resolved = Path(path).resolve()
+    if ".." in Path(path).parts:
+        raise ValidationError(f"Path traversal detected in {label}: {path}")
+    # 機密ディレクトリへのアクセスを防止
+    _DENIED_PREFIXES = ("/etc", "/var", "/usr", "/bin", "/sbin", "/boot", "/dev", "/proc", "/sys")
+    resolved_str = str(resolved)
+    for prefix in _DENIED_PREFIXES:
+        if resolved_str.startswith(prefix):
+            raise ValidationError(
+                f"{label} targets restricted directory: {resolved_str}"
+            )
+    return resolved
+
+
 def validate_video_path(path: str) -> Path:
-    """ファイルパスの安全性を検証（パストラバーサル防止）."""
+    """入力ファイルパスの安全性を検証（パストラバーサル防止）."""
     logger.step(
         "validate_video_path",
         context={"path": path},
         ai_todo=["check_traversal", "resolve_path"],
     )
-    resolved = Path(path).resolve()
-    if ".." in Path(path).parts:
-        logger.error(
-            "validate_video_path",
-            what="Path traversal detected",
-            why=f"Path contains '..': {path}",
-            how="Use absolute path without parent references",
-        )
-        raise ValidationError(f"Path traversal detected: {path}")
-    return resolved
+    return _check_path_traversal(path, "input path")
+
+
+def validate_output_path(path: str) -> Path:
+    """出力ファイルパスの安全性を検証（パストラバーサル防止）."""
+    logger.step(
+        "validate_output_path",
+        context={"path": path},
+        ai_todo=["check_traversal", "resolve_path"],
+    )
+    return _check_path_traversal(path, "output path")
 
 
 def validate_video_format(path: str) -> None:

@@ -79,20 +79,22 @@ class PoseEstimator:
             ai_todo=["detect_persons", "run_inference", "handle_gpu_retry"],
         )
 
-        valid_frames: List[np.ndarray] = []
+        # フレーム数保存: 未検出フレームも保持し、信頼度0でマーク
+        # valid_indicesは推論対象、missing_indicesは後で信頼度0で埋める
+        valid_indices: List[int] = []
         consecutive_failures = 0
 
         for i, frame in enumerate(frames):
             persons = self.detect_person(frame)
             if persons:
-                valid_frames.append(frame)
+                valid_indices.append(i)
                 consecutive_failures = 0
             else:
                 consecutive_failures += 1
                 logger.warning(
                     "estimate_2d_pose",
                     context={"frame_index": i, "consecutive_failures": consecutive_failures},
-                    ai_todo=["skip_frame", "check_threshold"],
+                    ai_todo=["mark_missing", "check_threshold"],
                 )
                 if consecutive_failures >= MAX_CONSECUTIVE_FAILURES:
                     logger.error(
@@ -105,13 +107,21 @@ class PoseEstimator:
                         f"Person detection failed for {consecutive_failures} consecutive frames"
                     )
 
-        if not valid_frames:
+        if not valid_indices:
             raise RuntimeError("No persons detected in any frame")
+
+        valid_frames = [frames[i] for i in valid_indices]
 
         current_batch_size = batch_size
         while current_batch_size >= 1:
             try:
-                return self._infer_batch(valid_frames, current_batch_size)
+                result = self._infer_batch(valid_frames, current_batch_size)
+                # フレーム数保存: 未検出フレームを信頼度0で挿入
+                if len(result.frames) < len(frames):
+                    result = self._fill_missing_frames(
+                        result, valid_indices, len(frames)
+                    )
+                return result
             except RuntimeError as exc:
                 if "CUDA out of memory" in str(exc):
                     logger.warning(
@@ -128,6 +138,37 @@ class PoseEstimator:
                     raise
 
         raise GPUMemoryError("GPU memory exhausted after all retry attempts")
+
+    @staticmethod
+    def _fill_missing_frames(
+        result: Pose2DSequence,
+        valid_indices: List[int],
+        total_frames: int,
+    ) -> Pose2DSequence:
+        """未検出フレームを信頼度0のダミーデータで埋めてフレーム数を保存."""
+        num_joints = len(result.joint_names)
+        valid_set = set(valid_indices)
+        filled_frames: List[Pose2DFrame] = []
+
+        valid_iter = iter(result.frames)
+        for i in range(total_frames):
+            if i in valid_set:
+                filled_frames.append(next(valid_iter))
+            else:
+                filled_frames.append(
+                    Pose2DFrame(
+                        frame_id=i,
+                        keypoints=np.zeros((num_joints, 2), dtype=np.float32),
+                        confidence=np.zeros(num_joints, dtype=np.float32),
+                        bounding_box=None,
+                    )
+                )
+
+        return Pose2DSequence(
+            frames=filled_frames,
+            joint_names=list(result.joint_names),
+            fps=result.fps,
+        )
 
     def _infer_batch(
         self, frames: List[np.ndarray], batch_size: int
