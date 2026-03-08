@@ -13,17 +13,137 @@
 
 ## 処理パイプライン
 
+### アーキテクチャ概要
+
 ```
-動画 → VideoExtractor → PoseEstimator → DataProcessor → Converter3D → BVH/FBX/JSON
-         (CPU/OpenCV)    (GPU/MMPose)      (CPU/SciPy)    (GPU/VideoPose3D)
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                          MotionExtractor Pipeline                              │
+│                                                                                 │
+│  ┌──────────┐    ┌──────────────┐    ┌──────────────┐    ┌───────────────┐      │
+│  │  入力動画  │    │    Stage 1    │    │    Stage 2    │    │    Stage 3     │      │
+│  │ MP4/AVI  │───▶│VideoExtractor│───▶│PoseEstimator │───▶│ DataProcessor │      │
+│  │ MOV/MKV  │    │  CPU/OpenCV  │    │  GPU/MMPose  │    │   CPU/SciPy   │      │
+│  └──────────┘    └──────────────┘    └──────────────┘    └───────┬───────┘      │
+│                         │                   │                     │              │
+│                         ▼                   ▼                     ▼              │
+│                   フレーム画像列       Pose2DSequence         加工済み2Dデータ       │
+│                   List[ndarray]     (17関節×信頼度)       (補完・スムージング済)      │
+│                                                                   │              │
+│                                                                   ▼              │
+│  ┌──────────┐    ┌───────────────────────────────────────────────────────┐      │
+│  │   出力    │    │                    Stage 4                            │      │
+│  │          │    │                  Converter3D                          │      │
+│  │ ┌──────┐ │    │  ┌────────────┐  ┌────────────┐  ┌───────────────┐  │      │
+│  │ │ BVH  │ │◀───│  │COCO → H36M│─▶│ VideoPose3D│─▶│ Export Engine │  │      │
+│  │ ├──────┤ │    │  │関節マッピング │  │ GPU/Temporal│  │ BVH/FBX/JSON │  │      │
+│  │ │ FBX  │ │    │  │ (17→17)    │  │    CNN     │  │              │  │      │
+│  │ ├──────┤ │    │  └────────────┘  └────────────┘  └───────────────┘  │      │
+│  │ │ JSON │ │    │                                                      │      │
+│  │ └──────┘ │    └───────────────────────────────────────────────────────┘      │
+│  └──────────┘                                                                   │
+└─────────────────────────────────────────────────────────────────────────────────┘
 ```
+
+### 各ステージの詳細
+
+```
+Stage 1: VideoExtractor                 Stage 2: PoseEstimator
+┌─────────────────────────┐             ┌─────────────────────────────┐
+│ 入力: 動画ファイル         │             │ 入力: フレーム画像列           │
+│                         │             │                             │
+│ ・OpenCVで動画デコード     │             │ ・MMPose (HRNet) で推定      │
+│ ・指定FPSでフレーム抽出    │             │ ・COCO 17関節の2D座標+信頼度  │
+│ ・パストラバーサル防止      │             │ ・バッチ処理 (default: 32)    │
+│ ・フォーマット/サイズ検証   │             │ ・GPU OOM → バッチ半減リトライ │
+│                         │             │                             │
+│ 出力: List[ndarray(BGR)] │             │ 出力: Pose2DSequence         │
+│       + VideoMetadata    │             │   frames[i].keypoints: (17,2)│
+└─────────────────────────┘             │   frames[i].confidence: (17,)│
+                                        └─────────────────────────────┘
+
+Stage 3: DataProcessor                  Stage 4: Converter3D
+┌─────────────────────────┐             ┌──────────────────────────────┐
+│ 入力: Pose2DSequence     │             │ 入力: 加工済みPose2DSequence   │
+│                         │             │                              │
+│ ・スプライン補間           │             │ ・COCO→H36M 関節マッピング    │
+│   (信頼度<0.3を補完)      │             │   直接対応 + ミッドポイント合成 │
+│ ・移動平均スムージング      │             │ ・VideoPose3D (Temporal CNN)  │
+│ ・関節削除(ワイルドカード)  │             │   受容野243フレーム/残差8層    │
+│ ・角速度算出(-π〜π正規化)  │             │ ・クォータニオン正規化         │
+│                         │             │ ・3Dガウシアンスムージング     │
+│ 保証:                    │             │                              │
+│ ・元データ不変(deepcopy)   │             │ 出力: Motion3DData            │
+│ ・補間マーカー付与(0.5)    │             │   positions: (N,17,3)        │
+│                         │             │   rotations: (N,17,4) [wxyz] │
+│ 出力: 加工済みPose2DSeq   │             │   → BVH / FBX / JSON        │
+└─────────────────────────┘             └──────────────────────────────┘
+```
+
+### データフロー
+
+```
+動画 (MP4)
+  │
+  ▼
+フレーム画像列 ─── ndarray (H, W, 3) BGR ×N枚
+  │
+  ▼
+2Dポーズ列 ─────── Pose2DFrame.keypoints: (17, 2)  ← COCO形式
+  │                Pose2DFrame.confidence: (17,)
+  │
+  ▼ [補完・スムージング]
+  │
+  ▼
+2Dポーズ列(加工済) ─ 欠損補完済み、スムージング済み
+  │
+  ▼ [COCO→H36M変換 → VideoPose3D推論]
+  │
+  ▼
+3Dモーション ────── Motion3DFrame.positions: (17, 3)  ← H36M形式
+  │                Motion3DFrame.rotations: (17, 4)  ← クォータニオン [w,x,y,z]
+  │
+  ▼ [エクスポート]
+  │
+  ├──▶ BVH (position mode / hierarchical mode)
+  ├──▶ FBX (ASCII skeletal)
+  └──▶ JSON (右手系Y-up + 階層情報)
+```
+
+### ステージ一覧
 
 | ステージ | コンポーネント | 処理内容 | 実行環境 |
 |---|---|---|---|
 | 1 | VideoExtractor | フレーム抽出・FPS調整 | CPU (OpenCV) |
-| 2 | PoseEstimator | 2Dポーズ推定 (17関節) | GPU (MMPose/RTMPose) |
-| 3 | DataProcessor | 欠損補完・スムージング | CPU (SciPy) |
-| 4 | Converter3D | 2D→3D変換・エクスポート | GPU (VideoPose3D) |
+| 2 | PoseEstimator | 2Dポーズ推定 (COCO 17関節) | GPU (MMPose/HRNet) |
+| 3 | DataProcessor | 欠損補完・スムージング・角速度算出 | CPU (SciPy) |
+| 4 | Converter3D | 関節変換・2D→3D変換・エクスポート | GPU (VideoPose3D) |
+
+### 関節マッピング (COCO → H36M)
+
+```
+COCO (17関節)                          H36M (17関節)
+──────────────                         ──────────────
+nose          ─────────────────────▶   Nose
+left_eye      ──┐                      Head ◀── avg(left_ear, right_ear)
+right_eye     ──┘
+left_ear      ──┬──────────────────▶   Head
+right_ear     ──┘
+left_shoulder ─────────────────────▶   LShoulder
+right_shoulder─────────────────────▶   RShoulder
+               ├── avg(shoulders) ──▶  Thorax
+left_elbow    ─────────────────────▶   LElbow
+right_elbow   ─────────────────────▶   RElbow
+left_wrist    ─────────────────────▶   LWrist
+right_wrist   ─────────────────────▶   RWrist
+left_hip      ─────────────────────▶   LHip
+right_hip     ─────────────────────▶   RHip
+               ├── avg(hips) ──────▶   Hip (root)
+               ├── avg(shoulders+hips)▶ Spine
+left_knee     ─────────────────────▶   LKnee
+right_knee    ─────────────────────▶   RKnee
+left_ankle    ─────────────────────▶   LFoot
+right_ankle   ─────────────────────▶   RFoot
+```
 
 ## セットアップ
 
