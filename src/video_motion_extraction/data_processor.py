@@ -168,16 +168,34 @@ class DataProcessor:
 
         angular_velocities = np.zeros((num_frames - 1, num_joints), dtype=np.float64)
 
+        # 親関節マッピング（ルート関節は自身を親とする）
+        parent_idx = list(range(num_joints))  # デフォルト: 自分自身
+        # COCO/H36M共通: 関節0がルート。子→親の一般的接続を使用
+        # joint_namesから動的にマッピングするのが理想だが、
+        # 2Dデータでは親子関係が不明な場合があるため、
+        # 隣接関節との相対角度で近似する
         for joint_idx in range(num_joints):
             for f in range(num_frames - 1):
                 kp_curr = pose_data.frames[f].keypoints[joint_idx]
                 kp_next = pose_data.frames[f + 1].keypoints[joint_idx]
 
-                angle_curr = np.arctan2(kp_curr[1], kp_curr[0])
-                angle_next = np.arctan2(kp_next[1], kp_next[0])
+                # ルート関節（parent_idx==自身）は原点基準、
+                # それ以外は親関節からの相対角度
+                p_idx = parent_idx[joint_idx]
+                parent_curr = pose_data.frames[f].keypoints[p_idx]
+                parent_next = pose_data.frames[f + 1].keypoints[p_idx]
+
+                angle_curr = np.arctan2(
+                    kp_curr[1] - parent_curr[1],
+                    kp_curr[0] - parent_curr[0],
+                )
+                angle_next = np.arctan2(
+                    kp_next[1] - parent_next[1],
+                    kp_next[0] - parent_next[0],
+                )
 
                 diff = angle_next - angle_curr
-                angular_velocities[f, joint_idx] = _normalize_angle(diff)
+                angular_velocities[f, joint_idx] = _normalize_angle(diff) / dt
 
         return angular_velocities
 

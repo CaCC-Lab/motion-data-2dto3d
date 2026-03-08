@@ -133,7 +133,7 @@ def load_videopose3d_model(
         return None
 
     try:
-        checkpoint = torch.load(weights_path, map_location=device, weights_only=False)
+        checkpoint = torch.load(weights_path, map_location=device, weights_only=True)
 
         if "model_pos" in checkpoint:
             state_dict = checkpoint["model_pos"]
