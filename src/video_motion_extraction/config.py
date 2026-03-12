@@ -36,3 +36,4 @@ class Converter3DConfig:
     bvh_mode: str = "position"          # "position" or "rotation"
     smooth_3d_sigma: float = 1.0        # ガウシアンスムージングσ (0=無効)
     confidence_filter: bool = True       # 低信頼度2Dフレームのフィルタリング
+    root_motion_scale: float = 2.5      # 2Dルートモーションの視差圧縮補正係数
