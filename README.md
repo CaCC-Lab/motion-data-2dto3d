@@ -5,6 +5,12 @@
 
 ## デモ
 
+### Video → Skeleton → BVH Motion Data
+
+入力動画から3Dスケルトンモーションデータへの変換結果:
+
+https://github.com/user-attachments/assets/670b35fb-600f-470a-9938-2b8948bac0d3
+
 ### スケルトンレンダリング
 
 BVHモーションデータからBlenderで生成した3Dスケルトンアニメーション:
