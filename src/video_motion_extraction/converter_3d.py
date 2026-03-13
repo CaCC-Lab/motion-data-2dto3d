@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 import numpy as np
-from scipy.ndimage import gaussian_filter1d
+from scipy.ndimage import gaussian_filter
 
 from video_motion_extraction import logger
 from video_motion_extraction.config import Converter3DConfig
@@ -153,7 +153,7 @@ class Converter3D:
         if body_range > 1e-6:
             target_height = 1.7  # meters
             scale_factor = target_height / body_range
-            positions_3d = positions_3d * scale_factor
+            positions_3d *= scale_factor
 
         # 5.1. ルートモーション復元
         # VideoPose3DはHip中心化入力のため、出力はHip相対座標。
@@ -227,13 +227,11 @@ class Converter3D:
                     ai_todo=["verify_visual_quality"],
                 )
 
-        # 5.5. 3Dテンポラルスムージング
+        # 5.5. 3Dテンポラルスムージング（時間軸のみにガウシアンフィルタ適用）
         if self._config.smooth_3d_sigma > 0:
-            for j in range(17):
-                for axis in range(3):
-                    positions_3d[:, j, axis] = gaussian_filter1d(
-                        positions_3d[:, j, axis], sigma=self._config.smooth_3d_sigma
-                    )
+            positions_3d = gaussian_filter(
+                positions_3d, sigma=[self._config.smooth_3d_sigma, 0, 0]
+            )
 
         # 6. クォータニオン回転計算
         motion_frames: List[Motion3DFrame] = []
