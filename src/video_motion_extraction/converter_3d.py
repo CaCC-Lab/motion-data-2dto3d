@@ -145,7 +145,17 @@ class Converter3D:
 
         positions_3d = output_3d.cpu().numpy()[0]  # (T, 17, 3)
 
-        # 4.5. ルートモーション復元
+        # 5. 人体スケールに正規化
+        # VideoPose3D出力は正規化入力に対する相対座標。
+        # 全フレームの高さ方向レンジから目標身長(1.7m)にスケーリング
+        # ※ルートモーション加算前に行う（平行移動量を身長に含めないため）
+        body_range = np.max(positions_3d[:, :, 1]) - np.min(positions_3d[:, :, 1])
+        if body_range > 1e-6:
+            target_height = 1.7  # meters
+            scale_factor = target_height / body_range
+            positions_3d = positions_3d * scale_factor
+
+        # 5.1. ルートモーション復元
         # VideoPose3DはHip中心化入力のため、出力はHip相対座標。
         # 保存した2D Hip軌跡を3D出力に再注入して絶対位置を復元する。
         # 単眼カメラの視差圧縮を補正するためスケール係数を適用。
@@ -153,15 +163,6 @@ class Converter3D:
         rms = self._config.root_motion_scale
         positions_3d[:, :, 0] += hip_2d_trajectory[:, 0:1] * rms
         positions_3d[:, :, 1] += hip_2d_trajectory[:, 1:2] * rms
-
-        # 5. 人体スケールに正規化
-        # VideoPose3D出力は正規化入力に対する相対座標。
-        # 全フレームの高さ方向レンジから目標身長(1.7m)にスケーリング
-        body_range = np.max(positions_3d[:, :, 1]) - np.min(positions_3d[:, :, 1])
-        if body_range > 1e-6:
-            target_height = 1.7  # meters
-            scale_factor = target_height / body_range
-            positions_3d = positions_3d * scale_factor
 
         # Y軸反転: VideoPose3Dは Y-down（画像座標系）→ Y-up
         positions_3d[:, :, 1] = -positions_3d[:, :, 1]
@@ -186,8 +187,8 @@ class Converter3D:
         tilt_angle = np.arccos(np.clip(cos_tilt, -1.0, 1.0))
         tilt_deg = np.degrees(tilt_angle)
 
-        if tilt_deg > 5.0:
-            # 自然な傾斜（約8°）を残して補正
+        if tilt_deg > 8.0:
+            # 自然傾斜（8°）を超える場合のみ補正
             natural_lean_rad = np.radians(8.0)
             correction_angle = tilt_angle - natural_lean_rad
 
@@ -207,11 +208,10 @@ class Converter3D:
                 ])
                 R = np.eye(3) + sin_c * K + (1 - cos_c) * (K @ K)
 
-                # Hip中心で回転（各フレーム）
-                for fi in range(positions_3d.shape[0]):
-                    hip = positions_3d[fi, 0, :].copy()
-                    for ji in range(positions_3d.shape[1]):
-                        positions_3d[fi, ji, :] = hip + R @ (positions_3d[fi, ji, :] - hip)
+                # Hip中心で回転（ベクトル化）
+                hip_pos = positions_3d[:, 0:1, :]  # (T, 1, 3)
+                rel = positions_3d - hip_pos
+                positions_3d = hip_pos + np.einsum('ij,tkj->tki', R, rel)
 
                 # 接地再調整
                 y_min2 = np.min(positions_3d[:, :, 1])
