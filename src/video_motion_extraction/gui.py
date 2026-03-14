@@ -42,6 +42,7 @@ def process_video(
     batch_size: int,
     bvh_mode: str = "position",
     smooth_3d: float = 1.0,
+    root_motion_scale: float = 2.5,
 ) -> Tuple[Optional[str], str]:
     """パイプライン実行してファイルパスとログを返す.
 
@@ -93,6 +94,7 @@ def process_video(
         converter = Converter3D(Converter3DConfig(
             bvh_mode=bvh_mode,
             smooth_3d_sigma=smooth_3d,
+            root_motion_scale=root_motion_scale,
         ))
         motion_3d = converter.convert_to_3d(pose_2d)
 
@@ -133,6 +135,7 @@ def create_ui():
                         label="BVHモード",
                     )
                     smooth_3d = gr.Slider(0.0, 5.0, value=1.0, step=0.1, label="3Dスムージングσ")
+                    root_motion_scale = gr.Slider(0.1, 10.0, value=2.5, step=0.1, label="ルートモーション補正係数")
 
                 run_btn = gr.Button("実行", variant="primary")
 
@@ -142,7 +145,7 @@ def create_ui():
 
         run_btn.click(
             fn=process_video,
-            inputs=[video_input, fps, threshold, smoothing, remove_joints, output_format, batch_size, bvh_mode, smooth_3d],
+            inputs=[video_input, fps, threshold, smoothing, remove_joints, output_format, batch_size, bvh_mode, smooth_3d, root_motion_scale],
             outputs=[output_file, status_log],
         )
 
