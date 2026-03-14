@@ -102,6 +102,9 @@ vme input.mp4 -o output.bvh --bvh-mode position
 # 3Dスムージング強度の調整（σ値、0で無効）
 vme input.mp4 -o output.bvh --smooth-3d 1.0
 
+# ルートモーション補正係数の調整（移動量のスケール）
+vme input.mp4 -o output.bvh --root-motion-scale 2.5
+
 # 不要な関節を除外（ワイルドカード対応）
 vme input.mp4 -o output.bvh --remove-joints "left_hand_*,right_hand_*"
 
@@ -124,6 +127,7 @@ vme --help
 | `--batch-size` | 32 | GPU バッチサイズ |
 | `--bvh-mode` | position | BVH出力モード (position/rotation) |
 | `--smooth-3d` | 1.0 | 3Dスムージングσ (0=無効) |
+| `--root-motion-scale` | 2.5 | ルートモーション補正係数 (0.1〜10.0) |
 | `--remove-joints` | なし | 除外する関節パターン (カンマ区切り) |
 | `--info` | - | 動画メタデータのみ表示 |
 
@@ -168,6 +172,7 @@ pose_2d = processor.smooth_trajectory(pose_2d, window_size=5)
 converter = Converter3D(Converter3DConfig(
     bvh_mode="position",
     smooth_3d_sigma=1.0,
+    root_motion_scale=2.5,
 ))
 motion_3d = converter.convert_to_3d(pose_2d)
 converter.export(motion_3d, "output.bvh", "bvh")
@@ -306,6 +311,8 @@ motion-data-2dto3d/
 │   ├── data_processor.py   # データ補完・スムージング
 │   ├── converter_3d.py     # 2D→3D変換 (VideoPose3D) ・エクスポート
 │   ├── videopose3d_model.py # VideoPose3Dモデル定義
+│   ├── joint_mapping.py    # 関節マッピング (COCO↔H36M)
+│   ├── quaternion_utils.py # クォータニオン計算ユーティリティ
 │   ├── models.py           # データモデル
 │   ├── config.py           # 設定クラス
 │   ├── errors.py           # 例外定義
