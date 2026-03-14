@@ -195,7 +195,16 @@ class Converter3D:
             # 回転軸 = spine × vertical
             rot_axis = np.cross(avg_spine_norm, vertical)
             rot_axis_norm = np.linalg.norm(rot_axis)
-            if rot_axis_norm > 1e-6:
+            if rot_axis_norm <= 1e-6:
+                logger.step(
+                    "global_tilt_correction",
+                    context={
+                        "skipped": "antiparallel_spine",
+                        "tilt_deg": round(tilt_deg, 1),
+                    },
+                    ai_todo=["investigate_inverted_skeleton"],
+                )
+            else:
                 rot_axis = rot_axis / rot_axis_norm
 
                 # ロドリゲスの回転公式で全関節を回転
@@ -232,6 +241,10 @@ class Converter3D:
             positions_3d = gaussian_filter(
                 positions_3d, sigma=[self._config.smooth_3d_sigma, 0, 0]
             )
+            # スムージングで境界フレームのY座標が負値になる場合があるため再接地
+            y_min_post = np.min(positions_3d[:, :, 1])
+            if y_min_post < 0:
+                positions_3d[:, :, 1] -= y_min_post
 
         # 6. クォータニオン回転計算
         motion_frames: List[Motion3DFrame] = []

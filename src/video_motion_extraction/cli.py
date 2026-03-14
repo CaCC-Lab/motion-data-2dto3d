@@ -103,7 +103,7 @@ def main(
             smooth_3d=smooth_3d,
             root_motion_scale=root_motion_scale,
         )
-    except (ValidationError, VideoLoadError) as exc:
+    except (ValidationError, VideoLoadError, ValueError) as exc:
         logger.error("cli.main", what="Input error", why=str(exc), how="Check input file and parameters")
         click.echo(f"Error: {exc}", err=True)
         sys.exit(1)
