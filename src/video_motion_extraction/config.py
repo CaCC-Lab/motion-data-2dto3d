@@ -36,3 +36,10 @@ class Converter3DConfig:
     bvh_mode: str = "position"          # "position" or "rotation"
     smooth_3d_sigma: float = 1.0        # ガウシアンスムージングσ (0=無効)
     confidence_filter: bool = True       # 低信頼度2Dフレームのフィルタリング
+    root_motion_scale: float = 2.5      # 2Dルートモーションの視差圧縮補正係数 (0.1〜10.0)
+
+    def __post_init__(self) -> None:
+        if not 0.1 <= self.root_motion_scale <= 10.0:
+            raise ValueError(
+                f"root_motion_scale must be between 0.1 and 10.0, got {self.root_motion_scale}"
+            )

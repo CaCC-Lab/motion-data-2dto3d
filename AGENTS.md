@@ -1,39 +1,57 @@
-# Repository Guidelines
+# AGENTS.md
 
-## Project Structure & Module Organization
-This repository is currently spec-first. Implementation files are not scaffolded yet, so treat `.kiro/specs/video-motion-extraction/` as the source of truth.
+## Overview
 
-- `.kiro/specs/video-motion-extraction/`: requirements (`requirements.md`), design (`design.md`), and implementation plan (`tasks.md`).
-- `.cursor/rules/`: commit and PR message conventions.
-- Planned Python package: `video_motion_extraction/` with modules such as `video_extractor.py`, `pose_estimator.py`, `data_processor.py`, `converter_3d.py`, `pipeline.py`, and `cli.py`.
-- Put tests in `tests/`, mirroring module names (example: `tests/test_video_extractor.py`).
+このリポジトリはCanon TDD（テスト先行）で開発しています。
+tests/ は Cursor が作成し、src/ は Claude Code が実装します。
+Kiro Spec は Living Spec として継続的に同期します。
 
-## Build, Test, and Development Commands
-- `pytest`: run the full test suite.
-- `pytest -m property`: run property-based tests only.
-- `pytest tests/test_video_extractor.py::test_extract_frames`: run one targeted test.
-- `python -m video_motion_extraction.cli input.mp4 --output output.bvh --format bvh`: run the CLI pipeline (after implementation).
-- `rg --files` and `rg "pattern"`: fast file and text search during development.
+## Review guidelines
 
-## Coding Style & Naming Conventions
-- Target Python 3.8+ with 4-space indentation.
-- Use `snake_case` for modules/functions/variables, `PascalCase` for classes, and `UPPER_SNAKE_CASE` for constants.
-- Keep public APIs type-annotated; prefer `@dataclass` for core data models (`VideoMetadata`, `Pose2DSequence`, `Motion3DData`).
-- Keep code aligned to pipeline stages (extract -> estimate -> process -> convert) and validate inputs early.
+### 要件トレーサビリティ（P0）
+- .kiro/specs/*/requirements.md の各要件に対応する実装があるか確認
+- 未実装の要件があればP0として報告
+- 要件IDを明示して報告すること
 
-## Testing Guidelines
-- Use `pytest` and `hypothesis`.
-- Name files `test_<module>.py`; name tests `test_<expected_behavior>`.
-- Cover unit tests and key invariants: frame-count preservation, joint-data consistency, finite angular velocity outputs, non-mutation of valid points during interpolation, and normalized quaternion rotations.
-- Mock GPU-dependent components (MMPose, VideoPose3D) for deterministic unit tests.
+### 仕様ズレ（P0）
+- 実装が requirements.md の記述と矛盾していればP0として報告
+- Acceptance Criteria（EARS形式）との整合性を確認
 
-## Commit & Pull Request Guidelines
-- The current `master` branch has no commits; follow `.cursor/rules/commit-message-format.mdc` and `.cursor/rules/pr-message-format.mdc`.
-- Commit format: `<type>: <summary>` using Conventional Commit types (`feat`, `fix`, `refactor`, `test`, `docs`, etc.), plus bullet points in the body.
-- Project default is Japanese for commit/PR text unless a task explicitly requires another language.
-- PRs should include: `Overview`, `Changes`, `Tests`, and related issues (`Refs:`/`Closes:`). Work on feature branches; avoid direct pushes to `main`/`master`.
+### Spec同期（P0）
+- requirements/design/tasks の同期状態を確認
+- requirements が更新されているのに design/tasks が古い場合はP0として報告
+
+### Canon TDD制約（P0）
+- tests/ディレクトリの変更は要注意フラグ
+- src/のみを修正すべきPRでtests/を変更していたらP0として報告
+- 理由: テストはCursorの責務、実装はClaude Codeの責務
+
+### エッジケース（P1）
+- 空リスト、空文字列、None、ゼロ除算の考慮漏れ
+- 境界値（off-by-one）エラー
+
+### 型安全性（P2）
+- 型ヒントの欠落
+- 型の不一致（Any型の多用）
+
+## Coding guidelines
+
+- Python >= 3.8
+- 型ヒント必須
+- Google style docstring
+- snake_case（関数/変数）、PascalCase（クラス）
+
+## Project structure
+
+```
+src/video_motion_extraction/  # 実装コード（Claude Code担当）
+tests/                        # テストコード（Cursor担当、変更禁止）
+.kiro/specs/                  # 仕様書（Kiro生成・同期）
+.kiro/steering/               # 基盤Steering（product/tech/structure）
+logs/                         # ログ出力
+```
 
 ## Agent Instructions
-- すべての応答は日本語で行うこと。
-- エージェントの役割はレビュワーとし、変更内容の不具合、回帰リスク、設計上の懸念、テスト不足を優先して確認すること。
-- 指摘事項がない場合は、その旨を明確に記載すること。
+- すべての応答は日本語で行うこと
+- エージェントの役割はレビュワーとし、変更内容の不具合、回帰リスク、設計上の懸念、テスト不足を優先して確認すること
+- 指摘事項がない場合は、その旨を明確に記載すること

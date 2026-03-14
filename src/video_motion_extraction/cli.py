@@ -54,6 +54,7 @@ def _detect_format(output_path: str) -> str:
     default="position", show_default=True, help="BVH出力モード",
 )
 @click.option("--smooth-3d", type=float, default=1.0, show_default=True, help="3Dスムージングσ (0=無効)")
+@click.option("--root-motion-scale", type=float, default=2.5, show_default=True, help="ルートモーション補正係数 (0.1〜10.0)")
 @click.option("--info", is_flag=True, default=False, help="動画メタデータのみ表示して終了")
 def main(
     video_path: str,
@@ -66,6 +67,7 @@ def main(
     batch_size: int,
     bvh_mode: str,
     smooth_3d: float,
+    root_motion_scale: float,
     info: bool,
 ) -> None:
     """動画から3Dモーションデータを抽出する.
@@ -99,8 +101,9 @@ def main(
             batch_size=batch_size,
             bvh_mode=bvh_mode,
             smooth_3d=smooth_3d,
+            root_motion_scale=root_motion_scale,
         )
-    except (ValidationError, VideoLoadError) as exc:
+    except (ValidationError, VideoLoadError, ValueError) as exc:
         logger.error("cli.main", what="Input error", why=str(exc), how="Check input file and parameters")
         click.echo(f"Error: {exc}", err=True)
         sys.exit(1)
@@ -138,6 +141,7 @@ def _run_pipeline(
     batch_size: int,
     bvh_mode: str = "position",
     smooth_3d: float = 1.0,
+    root_motion_scale: float = 2.5,
 ) -> None:
     """パイプライン実行: VideoExtractor → PoseEstimator → DataProcessor → Converter3D → export."""
     logger.step("cli.pipeline", context={"video_path": video_path, "format": fmt}, ai_todo=["run_full_pipeline"])
@@ -174,6 +178,7 @@ def _run_pipeline(
     converter = Converter3D(Converter3DConfig(
         bvh_mode=bvh_mode,
         smooth_3d_sigma=smooth_3d,
+        root_motion_scale=root_motion_scale,
     ))
     motion_3d = converter.convert_to_3d(pose_2d)
 

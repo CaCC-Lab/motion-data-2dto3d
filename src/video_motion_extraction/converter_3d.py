@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 import numpy as np
-from scipy.ndimage import gaussian_filter1d
+from scipy.ndimage import gaussian_filter
 
 from video_motion_extraction import logger
 from video_motion_extraction.config import Converter3DConfig
@@ -130,8 +130,9 @@ class Converter3D:
         kps_normalized[:, :, 0] = kps_h36m[:, :, 0] / scale - res_w / (2.0 * scale)
         kps_normalized[:, :, 1] = kps_h36m[:, :, 1] / scale - res_h / (2.0 * scale)
 
-        # Hip中心化
+        # Hip中心化（ルートモーション用に2D Hip軌跡を保存）
         hip_center = kps_normalized[:, 0:1, :]  # (T, 1, 2)
+        hip_2d_trajectory = hip_center[:, 0, :].copy()  # (T, 2) ルートモーション復元用
         kps_normalized = kps_normalized - hip_center
 
         # 4. VideoPose3D推論
@@ -147,11 +148,21 @@ class Converter3D:
         # 5. 人体スケールに正規化
         # VideoPose3D出力は正規化入力に対する相対座標。
         # 全フレームの高さ方向レンジから目標身長(1.7m)にスケーリング
+        # ※ルートモーション加算前に行う（平行移動量を身長に含めないため）
         body_range = np.max(positions_3d[:, :, 1]) - np.min(positions_3d[:, :, 1])
         if body_range > 1e-6:
             target_height = 1.7  # meters
             scale_factor = target_height / body_range
-            positions_3d = positions_3d * scale_factor
+            positions_3d *= scale_factor
+
+        # 5.1. ルートモーション復元
+        # VideoPose3DはHip中心化入力のため、出力はHip相対座標。
+        # 保存した2D Hip軌跡を3D出力に再注入して絶対位置を復元する。
+        # 単眼カメラの視差圧縮を補正するためスケール係数を適用。
+        # 2D X → 3D X（横方向移動）、2D Y → 3D Y（上下移動、Y-down）
+        rms = self._config.root_motion_scale
+        positions_3d[:, :, 0] += hip_2d_trajectory[:, 0:1] * rms
+        positions_3d[:, :, 1] += hip_2d_trajectory[:, 1:2] * rms
 
         # Y軸反転: VideoPose3Dは Y-down（画像座標系）→ Y-up
         positions_3d[:, :, 1] = -positions_3d[:, :, 1]
@@ -160,13 +171,80 @@ class Converter3D:
         y_min = np.min(positions_3d[:, :, 1])
         positions_3d[:, :, 1] -= y_min
 
-        # 5.5. 3Dテンポラルスムージング
+        # 5.3. グローバル傾き補正
+        # VideoPose3Dの単眼深度推定はスパイン方向を正確に復元できず、
+        # 全身が垂直から大きく傾くことがある。
+        # 全フレーム平均のスパイン方向を計算し、垂直に近づける回転を適用する。
+        # Hip(idx=0)とThorax(idx=8)の方向ベクトルで判定。
+        hip_positions = positions_3d[:, 0, :]      # (T, 3)
+        thorax_positions = positions_3d[:, 8, :]   # (T, 3)
+        spine_vectors = thorax_positions - hip_positions  # (T, 3)
+        avg_spine = spine_vectors.mean(axis=0)
+        avg_spine_norm = avg_spine / (np.linalg.norm(avg_spine) + 1e-8)
+
+        vertical = np.array([0.0, 1.0, 0.0])  # Y-up
+        cos_tilt = np.dot(avg_spine_norm, vertical)
+        tilt_angle = np.arccos(np.clip(cos_tilt, -1.0, 1.0))
+        tilt_deg = np.degrees(tilt_angle)
+
+        if tilt_deg > 8.0:
+            # 自然傾斜（8°）を超える場合のみ補正
+            natural_lean_rad = np.radians(8.0)
+            correction_angle = tilt_angle - natural_lean_rad
+
+            # 回転軸 = spine × vertical
+            rot_axis = np.cross(avg_spine_norm, vertical)
+            rot_axis_norm = np.linalg.norm(rot_axis)
+            if rot_axis_norm <= 1e-6:
+                logger.step(
+                    "global_tilt_correction",
+                    context={
+                        "skipped": "antiparallel_spine",
+                        "tilt_deg": round(tilt_deg, 1),
+                    },
+                    ai_todo=["investigate_inverted_skeleton"],
+                )
+            else:
+                rot_axis = rot_axis / rot_axis_norm
+
+                # ロドリゲスの回転公式で全関節を回転
+                cos_c = np.cos(correction_angle)
+                sin_c = np.sin(correction_angle)
+                K = np.array([
+                    [0, -rot_axis[2], rot_axis[1]],
+                    [rot_axis[2], 0, -rot_axis[0]],
+                    [-rot_axis[1], rot_axis[0], 0]
+                ])
+                R = np.eye(3) + sin_c * K + (1 - cos_c) * (K @ K)
+
+                # Hip中心で回転（ベクトル化）
+                hip_pos = positions_3d[:, 0:1, :]  # (T, 1, 3)
+                rel = positions_3d - hip_pos
+                positions_3d = hip_pos + np.einsum('ij,tkj->tki', R, rel)
+
+                # 接地再調整
+                y_min2 = np.min(positions_3d[:, :, 1])
+                positions_3d[:, :, 1] -= y_min2
+
+                logger.step(
+                    "global_tilt_correction",
+                    context={
+                        "tilt_deg": round(tilt_deg, 1),
+                        "correction_deg": round(np.degrees(correction_angle), 1),
+                        "remaining_deg": 8.0,
+                    },
+                    ai_todo=["verify_visual_quality"],
+                )
+
+        # 5.5. 3Dテンポラルスムージング（時間軸のみにガウシアンフィルタ適用）
         if self._config.smooth_3d_sigma > 0:
-            for j in range(17):
-                for axis in range(3):
-                    positions_3d[:, j, axis] = gaussian_filter1d(
-                        positions_3d[:, j, axis], sigma=self._config.smooth_3d_sigma
-                    )
+            positions_3d = gaussian_filter(
+                positions_3d, sigma=[self._config.smooth_3d_sigma, 0, 0]
+            )
+            # スムージングで境界フレームのY座標が負値になる場合があるため再接地
+            y_min_post = np.min(positions_3d[:, :, 1])
+            if y_min_post < 0:
+                positions_3d[:, :, 1] -= y_min_post
 
         # 6. クォータニオン回転計算
         motion_frames: List[Motion3DFrame] = []
