@@ -284,7 +284,7 @@ update_skeleton(bpy.context.scene)
 | ファイル | 説明 |
 |---|---|
 | `data/input/test_clip.mp4` | 入力サンプル: 野球バッターのスイング動画 |
-| `result/batter_swing.bvh` | 出力サンプル: 上記動画から生成した3Dモーションデータ (339フレーム, 17関節) |
+| `data/output/batter_swing_v3.bvh` | 出力サンプル: 上記動画から生成した3Dモーションデータ (339フレーム, 17関節) |
 
 ## 出力フォーマット
 
@@ -319,7 +319,7 @@ motion-data-2dto3d/
 │   ├── validators.py       # 入力検証
 │   └── logger.py           # ロギング
 ├── data/input/             # 入力動画
-├── result/                 # 出力ファイル
+├── data/output/            # 出力ファイル (BVH/動画)
 ├── docs/                   # ドキュメント・画像
 └── tests/                  # テスト
 ```
