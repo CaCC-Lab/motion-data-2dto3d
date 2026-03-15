@@ -50,6 +50,9 @@ Thumbs.db
 # Local addons / downloads
 addon.py
 
+# Large sample videos
+data/sample/*.mp4
+
 # WSL / Windows metadata
 *:Zone.Identifier
 wsl.localhost/
