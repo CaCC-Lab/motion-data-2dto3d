@@ -191,6 +191,38 @@
     - smooth_3d_sigmaをCLIオプションとして追加（デフォルト: 1.0、0=無効）
     - _Requirements: 14.1, 14.2, 14.3, 14.4_
 
+- [ ] 14. コンテナ化とAWSデプロイ
+  - [ ] 14.1 GPU対応Dockerfileの作成
+    - nvidia/cuda:11.8ベースイメージ
+    - Python 3.10、PyTorch、MMPose、VideoPose3D依存関係のインストール
+    - モデル重み（pretrained_h36m_cpn.bin）のCOPY
+    - MMPoseモデルの事前ダウンロード（mim download）
+    - Gradio GUI起動をENTRYPOINTに設定
+    - _Requirements: 15.1, 15.2, 15.3_
+
+  - [ ] 14.2 Gradio GUIの外部公開対応
+    - `server_name="0.0.0.0"` の設定
+    - 環境変数による設定の上書き対応
+    - _Requirements: 15.5_
+
+  - [ ] 14.3 docker-compose.ymlの作成
+    - GPUデバイス指定（nvidia runtime）
+    - ポートマッピング（7860:7860）
+    - ボリュームマウント（入出力ディレクトリ）
+    - _Requirements: 15.3_
+
+  - [ ] 14.4 AWSデプロイ手順ドキュメントの作成
+    - EC2 g4dn.xlarge起動手順
+    - Docker + NVIDIA Container Toolkitのセットアップ
+    - セキュリティグループ設定（TCP 7860）
+    - コンテナ起動・動作確認手順
+    - _Requirements: 15.4_
+
+  - [ ] 14.5 ローカルDockerビルド・起動テスト
+    - `docker build` が成功する
+    - `docker run` でGradio GUIが起動する
+    - ブラウザからアクセスできる
+
 ## 備考
 
 - `*` マーク付きのタスクはオプションであり、MVP実装時にはスキップ可能

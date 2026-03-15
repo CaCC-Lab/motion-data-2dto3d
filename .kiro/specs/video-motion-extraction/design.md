@@ -682,3 +682,37 @@ def test_frame_count_preservation(num_frames):
 | SciPy | >= 1.7.0 | 補間・フィルタリング |
 | PyTorch | >= 1.10.0 | GPU推論 |
 | CUDA | >= 11.0 | GPU計算 |
+
+## デプロイアーキテクチャ
+
+### コンテナ構成
+
+```
+Dockerfile (nvidia/cuda:11.8-runtime-ubuntu22.04)
+├── Python 3.10 + pip
+├── PyTorch 2.0 (CUDA 11.8)
+├── MMPose + MMDet + MMCV + MMEngine
+├── VideoPose3D モデル重み (pretrained_h36m_cpn.bin)
+├── video-motion-extraction パッケージ
+└── Gradio GUI (ポート7860)
+```
+
+### AWS構成（最小構成）
+
+```
+Internet → EC2 g4dn.xlarge (GPU: T4 16GB)
+             ├── Docker + NVIDIA Container Toolkit
+             ├── コンテナ (ポート7860)
+             └── セキュリティグループ: TCP 7860 許可
+```
+
+### Gradio公開設定
+
+```python
+demo.launch(server_name="0.0.0.0", server_port=7860)
+```
+
+### モデル重みの管理
+
+- `pretrained_h36m_cpn.bin`: Dockerイメージビルド時にCOPY
+- MMPoseモデル: `mim download` でイメージビルド時にダウンロード
