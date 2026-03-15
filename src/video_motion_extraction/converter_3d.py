@@ -147,12 +147,20 @@ class Converter3D:
 
         # 5. 人体スケールに正規化
         # VideoPose3D出力は正規化入力に対する相対座標。
-        # 全フレームの高さ方向レンジから目標身長(1.7m)にスケーリング
+        # Hip(idx=0)→Head(idx=10)距離で身長を推定し、目標スケールに変換。
+        # IQRで外れ値を除外し、安定フレームの中央値を使用。
         # ※ルートモーション加算前に行う（平行移動量を身長に含めないため）
-        body_range = np.max(positions_3d[:, :, 1]) - np.min(positions_3d[:, :, 1])
+        hip_head_dist = np.linalg.norm(
+            positions_3d[:, 10, :] - positions_3d[:, 0, :], axis=1
+        )
+        q1, q3 = np.percentile(hip_head_dist, [25, 75])
+        iqr = q3 - q1
+        inlier_mask = (hip_head_dist >= q1 - 1.5 * iqr) & (hip_head_dist <= q3 + 1.5 * iqr)
+        inlier_dist = hip_head_dist[inlier_mask]
+        body_range = np.median(inlier_dist) if len(inlier_dist) > 0 else np.median(hip_head_dist)
         if body_range > 1e-6:
-            target_height = 1.7  # meters
-            scale_factor = target_height / body_range
+            target_torso = 0.85  # Hip-Head ≈ 身長の半分
+            scale_factor = target_torso / body_range
             positions_3d *= scale_factor
 
         # 5.1. ルートモーション復元
