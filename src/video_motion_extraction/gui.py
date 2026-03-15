@@ -1,5 +1,6 @@
 """Gradio WebUI."""
 
+import os
 import tempfile
 from pathlib import Path
 from typing import Optional, Tuple
@@ -156,7 +157,10 @@ def main() -> None:
     """GUI起動エントリポイント."""
     logger.step("gui.main", context={}, ai_todo=["launch_gradio"])
     demo = create_ui()
-    demo.launch()
+    demo.launch(
+        server_name=os.environ.get("VME_HOST", "127.0.0.1"),
+        server_port=int(os.environ.get("VME_PORT", "7860")),
+    )
 
 
 if __name__ == "__main__":

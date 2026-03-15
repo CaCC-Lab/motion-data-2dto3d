@@ -168,3 +168,15 @@
 2. THE ガウシアンフィルタ SHALL 関節軸・座標軸には適用せず、時間軸のみに適用する
 3. THE Converter_3D SHALL スムージング後の境界フレームで負のY座標が発生した場合、接地を再調整する
 4. THE smooth_3d_sigma SHALL CLIオプションとして設定可能である（デフォルト: 1.0、0=無効）
+
+### 要件 15: コンテナ化とAWSデプロイ
+
+**ユーザーストーリー:** 運用者として、アプリケーションをDockerコンテナとしてパッケージングし、AWS EC2 GPUインスタンスにデプロイしたい。これにより、外部ユーザーがブラウザからモーション変換を利用できる。
+
+#### 受け入れ基準
+
+1. THE システム SHALL GPU対応のDockerfileを提供し、全依存関係（PyTorch, MMPose, VideoPose3D）を含むコンテナイメージをビルドできる
+2. THE Dockerfile SHALL モデル重み（pretrained_h36m_cpn.bin, MMPoseモデル）をイメージに同梱する
+3. THE コンテナ SHALL `docker run` で起動し、Gradio GUIがポート7860で公開される
+4. THE システム SHALL EC2 g4dn.xlargeインスタンスへのデプロイ手順をドキュメントとして提供する
+5. THE Gradio GUI SHALL `server_name="0.0.0.0"` で起動し、外部からアクセス可能とする

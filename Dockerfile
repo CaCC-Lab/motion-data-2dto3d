@@ -1,0 +1,42 @@
+FROM nvidia/cuda:11.8.0-cudnn8-runtime-ubuntu22.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONUNBUFFERED=1
+
+# System dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3.10 python3.10-venv python3-pip \
+    libgl1-mesa-glx libglib2.0-0 libsm6 libxrender1 libxext6 \
+    ffmpeg git \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN ln -sf /usr/bin/python3.10 /usr/bin/python
+
+WORKDIR /app
+
+# PyTorch (CUDA 11.8)
+RUN python -m pip install --no-cache-dir \
+    torch==2.1.0 torchvision==0.16.0 \
+    --index-url https://download.pytorch.org/whl/cu118
+
+# MMPose ecosystem + dependencies
+RUN python -m pip install --no-cache-dir openmim && \
+    mim install mmengine mmcv==2.1.0 mmdet mmpose && \
+    python -m pip install --no-cache-dir xtcocotools chumpy json-tricks munkres
+
+# Application (weights included in src/)
+COPY pyproject.toml .
+COPY src/ src/
+RUN python -m pip install --no-cache-dir -e ".[gui]"
+
+# Pre-download MMPose model so first run is fast
+# Falls back to runtime download if this fails during build
+RUN python -c "from mmpose.apis import MMPoseInferencer; MMPoseInferencer(pose2d='human', device='cpu')" \
+    || echo "WARN: MMPose model pre-download failed, will download on first run"
+
+EXPOSE 7860
+
+ENV VME_HOST=0.0.0.0
+ENV VME_PORT=7860
+
+ENTRYPOINT ["python", "-m", "video_motion_extraction.gui"]
