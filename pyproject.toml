@@ -18,6 +18,8 @@ gui = ["gradio>=4.0"]
 dev = [
     "pytest",
     "hypothesis",
+    "playwright",
+    "pytest-playwright",
 ]
 gpu = [
     "torch>=1.10.0",

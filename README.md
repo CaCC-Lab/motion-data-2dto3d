@@ -332,6 +332,14 @@ python -m pytest
 
 # 詳細出力
 python -m pytest -v
+
+# GUI E2Eテスト（Playwright要、GPU不要テストのみ）
+pip install playwright pytest-playwright
+playwright install chromium
+pytest tests/test_gui_e2e.py -m "not gpu" -v
+
+# 全E2Eテスト（GPU環境）
+pytest tests/test_gui_e2e.py -v
 ```
 
 ## ライセンス
