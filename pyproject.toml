@@ -15,6 +15,11 @@ dependencies = [
 
 [project.optional-dependencies]
 gui = ["gradio>=4.0"]
+web = [
+    "fastapi>=0.100",
+    "uvicorn[standard]>=0.20",
+    "python-multipart>=0.0.5",
+]
 dev = [
     "pytest",
     "hypothesis",
@@ -32,6 +37,7 @@ gpu = [
 [project.scripts]
 vme = "video_motion_extraction.cli:main"
 vme-gui = "video_motion_extraction.gui:main"
+vme-web = "video_motion_extraction.web:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

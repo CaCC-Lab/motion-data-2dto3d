@@ -1,3 +1,12 @@
+# Stage 1: フロントエンドビルド
+FROM node:20-slim AS frontend-builder
+WORKDIR /frontend
+COPY frontend/package.json frontend/package-lock.json* ./
+RUN npm ci || npm install
+COPY frontend/ ./
+RUN npm run build
+
+# Stage 2: Pythonランタイム（GPU対応）
 FROM nvidia/cuda:11.8.0-cudnn8-runtime-ubuntu22.04
 
 ENV DEBIAN_FRONTEND=noninteractive
@@ -27,10 +36,13 @@ RUN python -m pip install --no-cache-dir openmim && \
 # Application (weights included in src/)
 COPY pyproject.toml .
 COPY src/ src/
-RUN python -m pip install --no-cache-dir -e ".[gui]"
+
+# フロントエンドビルド結果をコピー
+COPY --from=frontend-builder /frontend/dist /app/frontend/dist
+
+RUN python -m pip install --no-cache-dir -e ".[web]"
 
 # Pre-download MMPose model so first run is fast
-# Falls back to runtime download if this fails during build
 RUN python -c "from mmpose.apis import MMPoseInferencer; MMPoseInferencer(pose2d='human', device='cpu')" \
     || echo "WARN: MMPose model pre-download failed, will download on first run"
 
@@ -39,4 +51,4 @@ EXPOSE 7860
 ENV VME_HOST=0.0.0.0
 ENV VME_PORT=7860
 
-ENTRYPOINT ["python", "-m", "video_motion_extraction.gui"]
+ENTRYPOINT ["python", "-m", "video_motion_extraction.web"]
