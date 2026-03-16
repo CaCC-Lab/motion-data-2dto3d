@@ -223,6 +223,34 @@
     - `docker run` でGradio GUIが起動する
     - ブラウザからアクセスできる
 
+- [x] 15. Web UI（FastAPI + React + Three.js）の実装
+  - [x] 15.1 FastAPI バックエンド実装
+    - `api/` パッケージ（schemas.py, pipeline_runner.py, routes.py, app.py）を作成
+    - 6つのAPIエンドポイント（upload, video info, process, SSE status, result download, BVH text）を実装
+    - SSEによるリアルタイム進捗ストリーミング
+    - アップロードファイルのサイズ制限、パストラバーサル防止、CORS設定
+    - インメモリジョブストア（TTLベースクリーンアップ、成果物・動画ファイル削除）
+    - _Requirements: 16.1, 16.2, 16.6_
+
+  - [x] 15.2 React フロントエンド実装
+    - Vite + React + TypeScript でフロントエンドを構築
+    - 2カラムレイアウト（左:操作パネル、右:3Dビューワー）
+    - ドラッグ&ドロップ動画アップロード、パラメータフォーム、処理ログ、ファイルダウンロード
+    - _Requirements: 16.2_
+
+  - [x] 15.3 Three.js BVH 3Dビューワー実装
+    - BVHLoader + SkeletonHelper + AnimationMixer でスケルトンアニメーション表示
+    - OrbitControls でマウス回転/ズーム/パン
+    - 再生/一時停止/シーク/速度変更コントロール
+    - _Requirements: 16.3_
+
+  - [x] 15.4 エントリポイントとDocker統合
+    - `web.py` エントリポイント（uvicorn起動）
+    - pyproject.toml に `[web]` 依存と `vme-web` スクリプト追加
+    - Dockerfile マルチステージビルド（Node.js → Python）
+    - `VME_UI` 環境変数による gui/web 切替（デフォルト: gui）
+    - _Requirements: 16.1, 16.4, 16.5_
+
 ## 備考
 
 - `*` マーク付きのタスクはオプションであり、MVP実装時にはスキップ可能

@@ -180,3 +180,16 @@
 3. THE コンテナ SHALL `docker run` で起動し、Gradio GUIがポート7860で公開される
 4. THE システム SHALL EC2 g4dn.xlargeインスタンスへのデプロイ手順をドキュメントとして提供する
 5. THE Gradio GUI SHALL `server_name="0.0.0.0"` で起動し、外部からアクセス可能とする
+
+### 要件 16: Web UI（FastAPI + React）
+
+**ユーザーストーリー:** ユーザーとして、ブラウザ上で動画をアップロードし、処理パラメータを設定し、リアルタイムで進捗を確認し、結果の3Dスケルトンをインタラクティブに閲覧・ダウンロードしたい。これにより、Gradio GUIよりも自由度の高い操作体験を得られる。
+
+#### 受け入れ基準
+
+1. THE システム SHALL FastAPI バックエンドと React フロントエンドによる Web UI を `vme-web` エントリポイントとして提供する
+2. THE Web UI SHALL 動画アップロード、メタデータ表示、処理パラメータ設定、パイプライン実行、SSEによるリアルタイム進捗表示、結果ダウンロードの機能を提供する
+3. THE Web UI SHALL Three.js による BVH 3Dスケルトンビューワーを提供し、OrbitControls によるマウス回転/ズーム/パン、再生/一時停止/シーク/速度変更の操作を可能とする
+4. THE Web UI SHALL 既存の Gradio GUI（`vme-gui`）および CLI（`vme`）と共存し、それらの動作を変更しない
+5. THE Docker コンテナ SHALL `VME_UI` 環境変数により `gui`（デフォルト）または `web` モードを切り替え可能とする
+6. THE FastAPI SHALL アップロードファイルのサイズ制限（500MB）、パストラバーサル防止、CORS設定、一時ファイルのTTLベースクリーンアップを実装する

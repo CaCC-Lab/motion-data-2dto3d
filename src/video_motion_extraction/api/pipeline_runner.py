@@ -27,15 +27,18 @@ _jobs_lock = threading.Lock()
 
 # アップロード動画ストア: video_id → video_path
 _videos: Dict[str, Path] = {}
+_video_timestamps: Dict[str, float] = {}  # video_id → 登録時刻
 
 # 完了ジョブの保持時間（秒）
 JOB_TTL = 3600  # 1時間
+VIDEO_TTL = 7200  # 2時間（ジョブTTLより長めに設定）
 
 
 def register_video(video_path: Path) -> str:
     """動画を登録してvideo_idを返す."""
     video_id = uuid.uuid4().hex[:12]
     _videos[video_id] = video_path
+    _video_timestamps[video_id] = time.time()
     return video_id
 
 
@@ -76,6 +79,20 @@ def _cleanup_expired_jobs() -> None:
             f.unlink(missing_ok=True)
         except OSError:
             pass
+
+    # TTL超過のアップロード動画も削除
+    expired_videos = [
+        vid for vid, ts in _video_timestamps.items()
+        if now - ts > VIDEO_TTL
+    ]
+    for vid in expired_videos:
+        video_path = _videos.pop(vid, None)
+        _video_timestamps.pop(vid, None)
+        if video_path:
+            try:
+                video_path.unlink(missing_ok=True)
+            except OSError:
+                pass
 
 
 def _update_job(job_id: str, **kwargs) -> None:
