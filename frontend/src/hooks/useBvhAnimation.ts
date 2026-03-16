@@ -39,17 +39,14 @@ export function useBvhAnimation(
   })
   const isPlayingRef = useRef(false)
 
-  // BVHテキストが変わったらパース＆セットアップ
-  useEffect(() => {
+  // シーンからスケルトン関連オブジェクトを除去するヘルパー
+  const cleanupScene = useCallback(() => {
     const scene = sceneRef.current
-    if (!scene || !bvhText) return
-
-    // 既存のスケルトンをクリア
-    if (skeletonRef.current) {
+    if (skeletonRef.current && scene) {
       scene.remove(skeletonRef.current)
       skeletonRef.current = null
     }
-    if (bonesGroupRef.current) {
+    if (bonesGroupRef.current && scene) {
       scene.remove(bonesGroupRef.current)
       bonesGroupRef.current = null
     }
@@ -57,7 +54,6 @@ export function useBvhAnimation(
       mixerRef.current.stopAllAction()
       mixerRef.current = null
     }
-    // Three.jsリソース解放
     if (sphereGeoRef.current) {
       sphereGeoRef.current.dispose()
       sphereGeoRef.current = null
@@ -65,6 +61,19 @@ export function useBvhAnimation(
     if (sphereMatRef.current) {
       sphereMatRef.current.dispose()
       sphereMatRef.current = null
+    }
+    isPlayingRef.current = false
+  }, [sceneRef])
+
+  // BVHテキストが変わったらパース＆セットアップ
+  useEffect(() => {
+    const scene = sceneRef.current
+    // bvhTextがnullになったらクリーンアップしてリセット
+    if (!scene) return
+    cleanupScene()
+    if (!bvhText) {
+      setState({ duration: 0, currentTime: 0, isPlaying: false, speed: 1 })
+      return
     }
 
     try {
@@ -130,7 +139,7 @@ export function useBvhAnimation(
     } catch (e) {
       console.warn('BVH parse error:', e)
     }
-  }, [bvhText, sceneRef, cameraRef])
+  }, [bvhText, sceneRef, cameraRef, cleanupScene])
 
   // アニメーションループ更新（外部から呼ばれる）
   const lastTimeRef = useRef(0)

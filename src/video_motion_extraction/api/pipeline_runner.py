@@ -5,7 +5,7 @@ import threading
 import time
 import uuid
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 
 from video_motion_extraction import logger
 from video_motion_extraction.api.schemas import JobStatusResponse, ProcessingRequest
@@ -25,7 +25,7 @@ _jobs: Dict[str, JobStatusResponse] = {}
 _job_timestamps: Dict[str, float] = {}  # job_id → 完了時刻
 _jobs_lock = threading.Lock()
 
-# アップロード動画ストア
+# アップロード動画ストア: video_id → (video_path, job_ids)
 _videos: Dict[str, Path] = {}
 
 # 完了ジョブの保持時間（秒）
@@ -45,22 +45,37 @@ def get_video_path(video_id: str) -> Optional[Path]:
 
 
 def get_job(job_id: str) -> Optional[JobStatusResponse]:
-    """ジョブ状態を取得."""
+    """ジョブ状態のスナップショットを取得（ロック内でコピー）."""
     with _jobs_lock:
-        return _jobs.get(job_id)
+        job = _jobs.get(job_id)
+        if job is None:
+            return None
+        return job.model_copy()
 
 
 def _cleanup_expired_jobs() -> None:
-    """TTL超過の完了/失敗ジョブを削除."""
+    """TTL超過の完了/失敗ジョブを削除（成果物ファイルも削除）."""
     now = time.time()
+    files_to_delete: List[Path] = []
+
     with _jobs_lock:
         expired = [
             jid for jid, ts in _job_timestamps.items()
             if now - ts > JOB_TTL
         ]
         for jid in expired:
-            _jobs.pop(jid, None)
+            job = _jobs.pop(jid, None)
             _job_timestamps.pop(jid, None)
+            # 成果物ファイルのパスを収集（ロック外で削除）
+            if job and job.result_file:
+                files_to_delete.append(Path(job.result_file))
+
+    # ファイルI/Oはロック外で実行
+    for f in files_to_delete:
+        try:
+            f.unlink(missing_ok=True)
+        except OSError:
+            pass
 
 
 def _update_job(job_id: str, **kwargs) -> None:

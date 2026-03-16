@@ -51,6 +51,6 @@ EXPOSE 7860
 ENV VME_HOST=0.0.0.0
 ENV VME_PORT=7860
 
-# VME_UI: "web" (FastAPI+React, default) or "gui" (Gradio)
-ENV VME_UI=web
+# VME_UI: "gui" (Gradio, default per REQ 15.3/15.5) or "web" (FastAPI+React)
+ENV VME_UI=gui
 ENTRYPOINT ["sh", "-c", "python -m video_motion_extraction.${VME_UI}"]

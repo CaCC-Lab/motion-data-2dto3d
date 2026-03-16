@@ -1,6 +1,7 @@
 """FastAPIアプリファクトリ."""
 
 import os
+import sys
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
@@ -9,6 +10,17 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from video_motion_extraction.api.routes import router
+
+
+def _is_relative_to(path: Path, base: Path) -> bool:
+    """Path.is_relative_to の Python 3.8 互換ラッパー."""
+    if sys.version_info >= (3, 9):
+        return path.is_relative_to(base)
+    try:
+        path.relative_to(base)
+        return True
+    except ValueError:
+        return False
 
 
 def create_app() -> FastAPI:
@@ -37,7 +49,6 @@ def create_app() -> FastAPI:
     app.include_router(router)
 
     # フロントエンドの静的ファイル配信（本番用）
-    # パッケージルートからの相対パス
     frontend_dist = Path(__file__).resolve().parent.parent.parent.parent / "frontend" / "dist"
     if frontend_dist.is_dir():
         frontend_dist_resolved = frontend_dist.resolve()
@@ -49,10 +60,14 @@ def create_app() -> FastAPI:
 
         @app.get("/{full_path:path}")
         async def serve_spa(full_path: str):
-            """SPAフォールバック: APIパス以外は全てindex.htmlを返す（パストラバーサル対策付き）."""
+            """SPAフォールバック: /api以外をindex.htmlで返す（パストラバーサル対策付き）."""
+            # /apiパスはSPAではなくAPIルーターが処理すべき（未定義APIは404に）
+            if full_path.startswith("api/") or full_path == "api":
+                raise HTTPException(status_code=404, detail="Not found")
+
             file_path = (frontend_dist / full_path).resolve()
-            # パストラバーサル防止: 解決後のパスがfrontend_dist以下であることを確認
-            if not str(file_path).startswith(str(frontend_dist_resolved)):
+            # パストラバーサル防止: is_relative_toで厳密にチェック
+            if not _is_relative_to(file_path, frontend_dist_resolved):
                 raise HTTPException(status_code=403, detail="Forbidden")
             if file_path.is_file():
                 return FileResponse(str(file_path))
