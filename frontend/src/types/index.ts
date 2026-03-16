@@ -32,7 +32,7 @@ export interface JobStatus {
   progress: number
   current_step: string
   log: string
-  result_file: string | null
+  output_format: 'bvh' | 'fbx' | 'json' | null
   error: string | null
 }
 

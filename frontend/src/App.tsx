@@ -65,7 +65,7 @@ export default function App() {
           setJobStatus(status)
           if (status.status === 'completed') {
             setAppState('complete')
-            if (status.result_file?.endsWith('.bvh')) {
+            if (status.output_format === 'bvh') {
               getBvhText(jid).then(setBvhText).catch(() => {})
             }
           } else if (status.status === 'failed') {
