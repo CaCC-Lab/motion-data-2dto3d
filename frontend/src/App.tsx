@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react'
+import React, { useState, useCallback, useRef } from 'react'
 import type { AppState, VideoInfo, JobStatus, ProcessingParams } from './types'
 import Layout from './components/Layout'
 import VideoUpload from './components/VideoUpload'
@@ -29,6 +29,7 @@ export default function App() {
   const [jobStatus, setJobStatus] = useState<JobStatus | null>(null)
   const [bvhText, setBvhText] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const unsubscribeRef = useRef<(() => void) | null>(null)
 
   const handleUpload = useCallback(async (file: File) => {
     try {
@@ -53,10 +54,12 @@ export default function App() {
       setAppState('processing')
       setError(null)
       setBvhText(null)
+      // 前回のSSE接続をクリーンアップ
+      unsubscribeRef.current?.()
       const jid = await startProcessing({ ...params, video_id: videoId })
       setJobId(jid)
 
-      subscribeJobStatus(
+      unsubscribeRef.current = subscribeJobStatus(
         jid,
         (status) => {
           setJobStatus(status)
@@ -82,6 +85,8 @@ export default function App() {
   }, [videoId, params])
 
   const handleReset = useCallback(() => {
+    unsubscribeRef.current?.()
+    unsubscribeRef.current = null
     setAppState('idle')
     setVideoId(null)
     setVideoInfo(null)

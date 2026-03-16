@@ -85,6 +85,7 @@ export default function BvhViewer({ bvhText }: Props) {
     return () => {
       window.removeEventListener('resize', onResize)
       cancelAnimationFrame(frameIdRef.current)
+      orbitControls.dispose()
       renderer.dispose()
       container.removeChild(renderer.domElement)
     }

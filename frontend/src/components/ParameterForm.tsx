@@ -35,7 +35,7 @@ export default function ParameterForm({ params, onChange, onSubmit, disabled, pr
         <div style={styles.field}>
           <label style={styles.label}>出力フォーマット</label>
           <select
-            style={styles.select}
+            style={styles.input}
             value={params.output_format}
             onChange={(e) => set('output_format', e.target.value as 'bvh' | 'fbx' | 'json')}
           >
@@ -130,16 +130,6 @@ const styles: Record<string, React.CSSProperties> = {
   value: { fontSize: '13px', color: '#6366f1', fontWeight: 600 },
   slider: { width: '100%', accentColor: '#6366f1' },
   input: {
-    width: '100%',
-    padding: '8px 10px',
-    background: '#16161d',
-    border: '1px solid #2a2a35',
-    borderRadius: '6px',
-    color: '#e0e0e0',
-    fontSize: '13px',
-    outline: 'none',
-  },
-  select: {
     width: '100%',
     padding: '8px 10px',
     background: '#16161d',

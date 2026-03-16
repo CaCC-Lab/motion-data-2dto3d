@@ -21,6 +21,7 @@ from video_motion_extraction.api.schemas import (
     UploadResponse,
     VideoInfoResponse,
 )
+from video_motion_extraction.validators import ALLOWED_VIDEO_EXTENSIONS
 from video_motion_extraction.video_extractor import VideoExtractor
 
 router = APIRouter(prefix="/api")
@@ -28,7 +29,9 @@ router = APIRouter(prefix="/api")
 # アップロード先ディレクトリ
 _upload_dir = Path(tempfile.mkdtemp(prefix="vme_uploads_"))
 
-ALLOWED_EXTENSIONS = {".mp4", ".avi", ".mov", ".mkv", ".webm"}
+# VideoExtractorはステートレスなのでモジュールレベルで再利用
+_video_extractor = VideoExtractor()
+
 MAX_UPLOAD_SIZE = 500 * 1024 * 1024  # 500MB
 CHUNK_SIZE = 8192
 
@@ -40,10 +43,10 @@ async def upload_video(file: UploadFile):
         raise HTTPException(status_code=400, detail="No filename provided")
 
     ext = Path(file.filename).suffix.lower()
-    if ext not in ALLOWED_EXTENSIONS:
+    if ext not in ALLOWED_VIDEO_EXTENSIONS:
         raise HTTPException(
             status_code=400,
-            detail=f"Unsupported format: {ext}. Allowed: {', '.join(ALLOWED_EXTENSIONS)}",
+            detail=f"Unsupported format: {ext}. Allowed: {', '.join(ALLOWED_VIDEO_EXTENSIONS)}",
         )
 
     # アップロードごとに一意なファイル名を生成（同名上書き防止）
@@ -82,8 +85,7 @@ async def get_video_info(video_id: str):
         raise HTTPException(status_code=404, detail="Video not found")
 
     try:
-        extractor = VideoExtractor()
-        meta = extractor.get_video_metadata(str(video_path))
+        meta = _video_extractor.get_video_metadata(str(video_path))
     except Exception as exc:
         raise HTTPException(
             status_code=422,
@@ -108,18 +110,7 @@ async def process_video(request: ProcessingRequest):
     if not video_path or not video_path.exists():
         raise HTTPException(status_code=404, detail="Video not found")
 
-    job_id = start_processing(
-        video_path=str(video_path),
-        fps=request.fps,
-        threshold=request.threshold,
-        smoothing=request.smoothing,
-        remove_joints=request.remove_joints,
-        output_format=request.output_format,
-        batch_size=request.batch_size,
-        bvh_mode=request.bvh_mode,
-        smooth_3d=request.smooth_3d,
-        root_motion_scale=request.root_motion_scale,
-    )
+    job_id = start_processing(video_path=str(video_path), request=request)
     return ProcessResponse(job_id=job_id)
 
 

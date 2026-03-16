@@ -27,6 +27,8 @@ export function useBvhAnimation(
   const clockRef = useRef(new THREE.Clock())
   const skeletonRef = useRef<THREE.SkeletonHelper | null>(null)
   const bonesGroupRef = useRef<THREE.Group | null>(null)
+  const sphereGeoRef = useRef<THREE.SphereGeometry | null>(null)
+  const sphereMatRef = useRef<THREE.MeshBasicMaterial | null>(null)
   const frameIdRef = useRef<number>(0)
 
   const [state, setState] = useState<BvhAnimationState>({
@@ -55,6 +57,15 @@ export function useBvhAnimation(
       mixerRef.current.stopAllAction()
       mixerRef.current = null
     }
+    // Three.jsリソース解放
+    if (sphereGeoRef.current) {
+      sphereGeoRef.current.dispose()
+      sphereGeoRef.current = null
+    }
+    if (sphereMatRef.current) {
+      sphereMatRef.current.dispose()
+      sphereMatRef.current = null
+    }
 
     try {
       const loader = new BVHLoader()
@@ -76,9 +87,11 @@ export function useBvhAnimation(
       scene.add(skeletonHelper)
       skeletonRef.current = skeletonHelper
 
-      // 関節に小球体を追加
+      // 関節に小球体を追加（リソースをRefに保持して後で解放）
       const sphereGeo = new THREE.SphereGeometry(0.02, 8, 8)
       const sphereMat = new THREE.MeshBasicMaterial({ color: '#a5b4fc' })
+      sphereGeoRef.current = sphereGeo
+      sphereMatRef.current = sphereMat
       skeleton.bones.forEach((bone) => {
         const sphere = new THREE.Mesh(sphereGeo, sphereMat)
         bone.add(sphere)
@@ -120,16 +133,19 @@ export function useBvhAnimation(
   }, [bvhText, sceneRef, cameraRef])
 
   // アニメーションループ更新（外部から呼ばれる）
+  const lastTimeRef = useRef(0)
   const update = useCallback(() => {
     if (mixerRef.current && isPlayingRef.current) {
       const delta = clockRef.current.getDelta()
       mixerRef.current.update(delta)
 
       if (actionRef.current) {
-        setState((prev) => ({
-          ...prev,
-          currentTime: actionRef.current!.time,
-        }))
+        const t = actionRef.current.time
+        // 0.01秒未満の変化は無視してre-renderを抑制
+        if (Math.abs(t - lastTimeRef.current) > 0.01) {
+          lastTimeRef.current = t
+          setState((prev) => ({ ...prev, currentTime: t }))
+        }
       }
     }
   }, [])
