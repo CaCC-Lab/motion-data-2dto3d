@@ -40,7 +40,7 @@ COPY src/ src/
 # フロントエンドビルド結果をコピー
 COPY --from=frontend-builder /frontend/dist /app/frontend/dist
 
-RUN python -m pip install --no-cache-dir -e ".[web]"
+RUN python -m pip install --no-cache-dir -e ".[gui,web]"
 
 # Pre-download MMPose model so first run is fast
 RUN python -c "from mmpose.apis import MMPoseInferencer; MMPoseInferencer(pose2d='human', device='cpu')" \
@@ -51,4 +51,6 @@ EXPOSE 7860
 ENV VME_HOST=0.0.0.0
 ENV VME_PORT=7860
 
-ENTRYPOINT ["python", "-m", "video_motion_extraction.web"]
+# VME_UI: "web" (FastAPI+React, default) or "gui" (Gradio)
+ENV VME_UI=web
+ENTRYPOINT ["sh", "-c", "python -m video_motion_extraction.${VME_UI}"]

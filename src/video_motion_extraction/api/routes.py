@@ -1,8 +1,9 @@
 """FastAPI APIエンドポイント."""
 
 import asyncio
-import shutil
+import json
 import tempfile
+import uuid
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, UploadFile
@@ -29,6 +30,7 @@ _upload_dir = Path(tempfile.mkdtemp(prefix="vme_uploads_"))
 
 ALLOWED_EXTENSIONS = {".mp4", ".avi", ".mov", ".mkv", ".webm"}
 MAX_UPLOAD_SIZE = 500 * 1024 * 1024  # 500MB
+CHUNK_SIZE = 8192
 
 
 @router.post("/upload", response_model=UploadResponse)
@@ -44,14 +46,29 @@ async def upload_video(file: UploadFile):
             detail=f"Unsupported format: {ext}. Allowed: {', '.join(ALLOWED_EXTENSIONS)}",
         )
 
-    # 安全なファイル名生成
-    safe_name = Path(file.filename).name
+    # アップロードごとに一意なファイル名を生成（同名上書き防止）
+    safe_name = f"{uuid.uuid4().hex[:8]}_{Path(file.filename).name}"
     dest = _upload_dir / safe_name
-    with open(dest, "wb") as f:
-        content = await file.read()
-        if len(content) > MAX_UPLOAD_SIZE:
-            raise HTTPException(status_code=413, detail="File too large (max 500MB)")
-        f.write(content)
+
+    # ストリーミング書き込み＋サイズチェック（メモリ枯渇防止）
+    size = 0
+    try:
+        with open(dest, "wb") as f:
+            while True:
+                chunk = await file.read(CHUNK_SIZE)
+                if not chunk:
+                    break
+                size += len(chunk)
+                if size > MAX_UPLOAD_SIZE:
+                    f.close()
+                    dest.unlink(missing_ok=True)
+                    raise HTTPException(status_code=413, detail="File too large (max 500MB)")
+                f.write(chunk)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        dest.unlink(missing_ok=True)
+        raise HTTPException(status_code=500, detail=f"Upload failed: {exc}")
 
     video_id = register_video(dest)
     return UploadResponse(video_id=video_id, filename=safe_name)
@@ -64,8 +81,15 @@ async def get_video_info(video_id: str):
     if not video_path or not video_path.exists():
         raise HTTPException(status_code=404, detail="Video not found")
 
-    extractor = VideoExtractor()
-    meta = extractor.get_video_metadata(str(video_path))
+    try:
+        extractor = VideoExtractor()
+        meta = extractor.get_video_metadata(str(video_path))
+    except Exception as exc:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Failed to read video metadata: {exc}",
+        )
+
     return VideoInfoResponse(
         video_id=video_id,
         width=meta.width,
@@ -104,9 +128,6 @@ async def job_status_sse(job_id: str):
     """SSEで進捗ストリーミング."""
 
     async def event_generator():
-        import json
-
-        last_log_len = 0
         while True:
             job = get_job(job_id)
             if not job:

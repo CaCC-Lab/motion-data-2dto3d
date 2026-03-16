@@ -35,6 +35,7 @@ export function useBvhAnimation(
     isPlaying: false,
     speed: 1,
   })
+  const isPlayingRef = useRef(false)
 
   // BVHテキストが変わったらパース＆セットアップ
   useEffect(() => {
@@ -93,6 +94,7 @@ export function useBvhAnimation(
       actionRef.current = action
       clockRef.current = new THREE.Clock()
 
+      isPlayingRef.current = true
       setState({
         duration: clip.duration,
         currentTime: 0,
@@ -119,7 +121,7 @@ export function useBvhAnimation(
 
   // アニメーションループ更新（外部から呼ばれる）
   const update = useCallback(() => {
-    if (mixerRef.current && state.isPlaying) {
+    if (mixerRef.current && isPlayingRef.current) {
       const delta = clockRef.current.getDelta()
       mixerRef.current.update(delta)
 
@@ -130,25 +132,29 @@ export function useBvhAnimation(
         }))
       }
     }
-  }, [state.isPlaying])
+  }, [])
 
   const controls: BvhAnimationControls = {
     play: useCallback(() => {
+      isPlayingRef.current = true
       clockRef.current.start()
       setState((prev) => ({ ...prev, isPlaying: true }))
     }, []),
     pause: useCallback(() => {
+      isPlayingRef.current = false
       clockRef.current.stop()
       setState((prev) => ({ ...prev, isPlaying: false }))
     }, []),
     toggle: useCallback(() => {
       setState((prev) => {
-        if (prev.isPlaying) {
-          clockRef.current.stop()
-        } else {
+        const next = !prev.isPlaying
+        isPlayingRef.current = next
+        if (next) {
           clockRef.current.start()
+        } else {
+          clockRef.current.stop()
         }
-        return { ...prev, isPlaying: !prev.isPlaying }
+        return { ...prev, isPlaying: next }
       })
     }, []),
     seek: useCallback((time: number) => {

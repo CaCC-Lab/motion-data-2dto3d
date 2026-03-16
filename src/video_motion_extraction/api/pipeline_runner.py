@@ -2,6 +2,7 @@
 
 import tempfile
 import threading
+import time
 import uuid
 from pathlib import Path
 from typing import Dict, Optional
@@ -21,10 +22,14 @@ from video_motion_extraction.video_extractor import VideoExtractor
 
 # インメモリジョブストア（単一ユーザー前提）
 _jobs: Dict[str, JobStatusResponse] = {}
+_job_timestamps: Dict[str, float] = {}  # job_id → 完了時刻
 _jobs_lock = threading.Lock()
 
 # アップロード動画ストア
 _videos: Dict[str, Path] = {}
+
+# 完了ジョブの保持時間（秒）
+JOB_TTL = 3600  # 1時間
 
 
 def register_video(video_path: Path) -> str:
@@ -43,6 +48,19 @@ def get_job(job_id: str) -> Optional[JobStatusResponse]:
     """ジョブ状態を取得."""
     with _jobs_lock:
         return _jobs.get(job_id)
+
+
+def _cleanup_expired_jobs() -> None:
+    """TTL超過の完了/失敗ジョブを削除."""
+    now = time.time()
+    with _jobs_lock:
+        expired = [
+            jid for jid, ts in _job_timestamps.items()
+            if now - ts > JOB_TTL
+        ]
+        for jid in expired:
+            _jobs.pop(jid, None)
+            _job_timestamps.pop(jid, None)
 
 
 def _update_job(job_id: str, **kwargs) -> None:
@@ -66,6 +84,7 @@ def start_processing(
     root_motion_scale: float,
 ) -> str:
     """パイプラインをバックグラウンドで実行開始し、job_idを返す."""
+    _cleanup_expired_jobs()
     job_id = uuid.uuid4().hex[:12]
 
     with _jobs_lock:
@@ -195,6 +214,8 @@ def _run_pipeline(
             result_file=tmp.name,
         )
         _append_log(job_id, f"Done! Exported as {output_format}")
+        with _jobs_lock:
+            _job_timestamps[job_id] = time.time()
 
     except Exception as exc:
         logger.error(
@@ -210,3 +231,5 @@ def _run_pipeline(
             error=str(exc),
         )
         _append_log(job_id, f"\nError: {exc}")
+        with _jobs_lock:
+            _job_timestamps[job_id] = time.time()
