@@ -716,3 +716,39 @@ demo.launch(server_name="0.0.0.0", server_port=7860)
 
 - `pretrained_h36m_cpn.bin`: Dockerイメージビルド時にCOPY
 - MMPoseモデル: `mim download` でイメージビルド時にダウンロード
+
+## Web UI アーキテクチャ（要件 16）
+
+### システム構成
+
+```
+[React + Three.js]  ←→  [FastAPI]  ←→  [既存パイプライン]
+  frontend/dist/          api/           VideoExtractor → PoseEstimator → DataProcessor → Converter3D
+  ポート7860(同一)       ポート7860
+```
+
+### コンポーネント
+
+| コンポーネント | ファイル | 役割 |
+|---|---|---|
+| FastAPI App | `api/app.py` | アプリファクトリ、CORS、SPA配信（パストラバーサル防止付き） |
+| API Routes | `api/routes.py` | 6エンドポイント（upload, video info, process, SSE status, result, BVH） |
+| Pipeline Runner | `api/pipeline_runner.py` | バックグラウンドパイプライン実行、ジョブ管理、TTLクリーンアップ |
+| Schemas | `api/schemas.py` | Pydanticリクエスト/レスポンスモデル |
+| Entry Point | `web.py` | uvicornによるFastAPI起動 |
+
+### フロントエンド構成
+
+- **ビルド**: Vite + React 18 + TypeScript
+- **レイアウト**: 2カラム（左:操作パネル、右:Three.js 3Dビューワー）
+- **3Dビューワー**: BVHLoader + SkeletonHelper + AnimationMixer + OrbitControls
+- **状態管理**: React hooks（useProcessing, useBvhAnimation）
+- **API通信**: fetch + EventSource（SSE）
+
+### セキュリティ設計
+
+- アップロードファイルサイズ制限（500MB、チャンクストリーミング）
+- パストラバーサル防止（`Path.is_relative_to` + Python 3.8互換ラッパー）
+- CORS設定（`VME_CORS_ORIGINS` 環境変数）
+- 一時ファイルTTLクリーンアップ（ジョブ: 1時間、動画: 2時間）
+- Docker ENTRYPOINT ホワイトリスト検証（gui/web のみ許可）

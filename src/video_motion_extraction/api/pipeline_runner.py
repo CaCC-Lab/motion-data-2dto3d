@@ -1,0 +1,245 @@
+"""バックグラウンドパイプライン実行 + 進捗管理."""
+
+import tempfile
+import threading
+import time
+import uuid
+from pathlib import Path
+from typing import Dict, List, Optional
+
+from video_motion_extraction import logger
+from video_motion_extraction.api.schemas import JobStatusResponse, ProcessingRequest
+from video_motion_extraction.config import (
+    Converter3DConfig,
+    ExtractorConfig,
+    PoseModelConfig,
+    ProcessingConfig,
+)
+from video_motion_extraction.converter_3d import Converter3D
+from video_motion_extraction.data_processor import DataProcessor
+from video_motion_extraction.pose_estimator import PoseEstimator
+from video_motion_extraction.video_extractor import VideoExtractor
+
+# インメモリジョブストア（単一ユーザー前提）
+_jobs: Dict[str, JobStatusResponse] = {}
+_job_timestamps: Dict[str, float] = {}  # job_id → 完了時刻
+_jobs_lock = threading.Lock()
+
+# アップロード動画ストア: video_id → video_path
+_videos: Dict[str, Path] = {}
+_video_timestamps: Dict[str, float] = {}  # video_id → 登録時刻
+
+# 完了ジョブの保持時間（秒）
+JOB_TTL = 3600  # 1時間
+VIDEO_TTL = 7200  # 2時間（ジョブTTLより長めに設定）
+
+
+def register_video(video_path: Path) -> str:
+    """動画を登録してvideo_idを返す."""
+    video_id = uuid.uuid4().hex[:12]
+    _videos[video_id] = video_path
+    _video_timestamps[video_id] = time.time()
+    return video_id
+
+
+def get_video_path(video_id: str) -> Optional[Path]:
+    """video_idからパスを取得."""
+    return _videos.get(video_id)
+
+
+def get_job(job_id: str) -> Optional[JobStatusResponse]:
+    """ジョブ状態のスナップショットを取得（ロック内でコピー）."""
+    with _jobs_lock:
+        job = _jobs.get(job_id)
+        if job is None:
+            return None
+        return job.model_copy()
+
+
+def _cleanup_expired_jobs() -> None:
+    """TTL超過の完了/失敗ジョブを削除（成果物ファイルも削除）."""
+    now = time.time()
+    files_to_delete: List[Path] = []
+
+    with _jobs_lock:
+        expired = [
+            jid for jid, ts in _job_timestamps.items()
+            if now - ts > JOB_TTL
+        ]
+        for jid in expired:
+            job = _jobs.pop(jid, None)
+            _job_timestamps.pop(jid, None)
+            # 成果物ファイルのパスを収集（ロック外で削除）
+            if job and job.result_file:
+                files_to_delete.append(Path(job.result_file))
+
+    # ファイルI/Oはロック外で実行
+    for f in files_to_delete:
+        try:
+            f.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+    # TTL超過のアップロード動画も削除
+    expired_videos = [
+        vid for vid, ts in _video_timestamps.items()
+        if now - ts > VIDEO_TTL
+    ]
+    for vid in expired_videos:
+        video_path = _videos.pop(vid, None)
+        _video_timestamps.pop(vid, None)
+        if video_path:
+            try:
+                video_path.unlink(missing_ok=True)
+            except OSError:
+                pass
+
+
+def _update_job(job_id: str, **kwargs) -> None:
+    """ジョブ状態を更新."""
+    with _jobs_lock:
+        if job_id in _jobs:
+            for k, v in kwargs.items():
+                setattr(_jobs[job_id], k, v)
+
+
+def _append_log(job_id: str, message: str) -> None:
+    """ログ行を追加."""
+    with _jobs_lock:
+        job = _jobs.get(job_id)
+        if job:
+            job.log = job.log + message + "\n" if job.log else message + "\n"
+
+
+def _record_completion(job_id: str) -> None:
+    """ジョブ完了時刻を記録."""
+    with _jobs_lock:
+        _job_timestamps[job_id] = time.time()
+
+
+def start_processing(video_path: str, request: ProcessingRequest) -> str:
+    """パイプラインをバックグラウンドで実行開始し、job_idを返す."""
+    _cleanup_expired_jobs()
+    job_id = uuid.uuid4().hex[:12]
+
+    with _jobs_lock:
+        _jobs[job_id] = JobStatusResponse(
+            job_id=job_id,
+            status="queued",
+            progress=0.0,
+            current_step="queued",
+            log="",
+            output_format=request.output_format,
+        )
+
+    thread = threading.Thread(
+        target=_run_pipeline,
+        args=(job_id, video_path, request),
+        daemon=True,
+    )
+    thread.start()
+    return job_id
+
+
+def _run_pipeline(
+    job_id: str,
+    video_path: str,
+    req: ProcessingRequest,
+) -> None:
+    """パイプライン実行（gui.pyのprocess_videoと同等ロジック）."""
+    logger.step("api.pipeline_runner", context={"job_id": job_id, "video_path": video_path}, ai_todo=["run"])
+
+    _update_job(job_id, status="running", current_step="initializing")
+
+    try:
+        # メタデータ取得
+        extractor_for_meta = VideoExtractor()
+        meta = extractor_for_meta.get_video_metadata(video_path)
+        _append_log(
+            job_id,
+            f"=== Video Info ===\n"
+            f"Resolution: {meta.width}x{meta.height}\n"
+            f"FPS: {meta.fps}\n"
+            f"Frames: {meta.total_frames}\n"
+            f"Duration: {meta.duration:.2f}s\n"
+            f"Codec: {meta.codec}",
+        )
+
+        # 1. フレーム抽出 (0% → 25%)
+        _update_job(job_id, current_step="extracting_frames", progress=0.05)
+        _append_log(job_id, "Extracting frames...")
+        extractor = VideoExtractor(ExtractorConfig(target_fps=req.fps))
+        frames = extractor.extract_frames(video_path, target_fps=req.fps)
+        _update_job(job_id, progress=0.25)
+        _append_log(job_id, f"  {len(frames)} frames extracted")
+
+        # 2. 2Dポーズ推定 (25% → 50%)
+        _update_job(job_id, current_step="estimating_poses", progress=0.25)
+        _append_log(job_id, "Estimating 2D poses...")
+        estimator = PoseEstimator(PoseModelConfig(batch_size=req.batch_size))
+        pose_2d = estimator.estimate_2d_pose(frames, batch_size=req.batch_size)
+        _update_job(job_id, progress=0.50)
+        _append_log(job_id, f"  {len(pose_2d.frames)} poses ({len(pose_2d.joint_names)} joints)")
+
+        # 3. データ処理 (50% → 75%)
+        _update_job(job_id, current_step="processing_data", progress=0.50)
+        _append_log(job_id, "Processing data...")
+        joints_to_remove = (
+            [j.strip() for j in req.remove_joints.split(",") if j.strip()]
+            if req.remove_joints
+            else []
+        )
+        processor = DataProcessor(
+            ProcessingConfig(
+                confidence_threshold=req.threshold,
+                smoothing_window=req.smoothing,
+                joints_to_remove=joints_to_remove,
+            )
+        )
+        pose_2d = processor.interpolate_missing(pose_2d)
+        pose_2d = processor.smooth_trajectory(pose_2d, window_size=req.smoothing)
+        if joints_to_remove:
+            pose_2d = processor.remove_joints(pose_2d, joints_to_remove)
+            _append_log(job_id, f"  {len(pose_2d.joint_names)} joints remaining")
+        _update_job(job_id, progress=0.75)
+
+        # 4. 3D変換 & エクスポート (75% → 100%)
+        _update_job(job_id, current_step="converting_3d", progress=0.75)
+        _append_log(job_id, "Converting to 3D...")
+        converter = Converter3D(Converter3DConfig(
+            bvh_mode=req.bvh_mode,
+            smooth_3d_sigma=req.smooth_3d,
+            root_motion_scale=req.root_motion_scale,
+        ))
+        motion_3d = converter.convert_to_3d(pose_2d)
+
+        suffix = f".{req.output_format}"
+        tmp = tempfile.NamedTemporaryFile(delete=False, suffix=suffix, prefix="vme_")
+        converter.export(motion_3d, tmp.name, req.output_format)
+        tmp.close()
+
+        _update_job(
+            job_id,
+            status="completed",
+            progress=1.0,
+            current_step="done",
+            result_file=tmp.name,
+        )
+        _append_log(job_id, f"Done! Exported as {req.output_format}")
+        _record_completion(job_id)
+
+    except Exception as exc:
+        logger.error(
+            "api.pipeline_runner",
+            what="Pipeline failed",
+            why=str(exc),
+            how="Check input and parameters",
+        )
+        _update_job(
+            job_id,
+            status="failed",
+            current_step="error",
+            error=str(exc),
+        )
+        _append_log(job_id, f"\nError: {exc}")
+        _record_completion(job_id)
