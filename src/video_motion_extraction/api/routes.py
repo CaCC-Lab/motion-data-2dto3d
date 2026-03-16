@@ -154,7 +154,7 @@ async def download_result(job_id: str):
         raise HTTPException(status_code=400, detail="Job not completed")
 
     result_path = Path(job.result_file)
-    if not result_path.exists():
+    if not result_path.is_file():
         raise HTTPException(status_code=404, detail="Result file not found")
 
     return FileResponse(
@@ -174,10 +174,11 @@ async def get_bvh_text(job_id: str):
         raise HTTPException(status_code=400, detail="Job not completed")
 
     result_path = Path(job.result_file)
-    if not result_path.exists():
-        raise HTTPException(status_code=404, detail="BVH file not found")
-    if not result_path.suffix.lower() == ".bvh":
+    if result_path.suffix.lower() != ".bvh":
         raise HTTPException(status_code=400, detail="Result is not BVH format")
 
-    text = result_path.read_text(encoding="utf-8")
+    try:
+        text = result_path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="BVH file not found")
     return {"bvh": text}

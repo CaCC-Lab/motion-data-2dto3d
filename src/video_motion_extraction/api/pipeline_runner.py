@@ -25,7 +25,7 @@ _jobs: Dict[str, JobStatusResponse] = {}
 _job_timestamps: Dict[str, float] = {}  # job_id → 完了時刻
 _jobs_lock = threading.Lock()
 
-# アップロード動画ストア: video_id → (video_path, job_ids)
+# アップロード動画ストア: video_id → video_path
 _videos: Dict[str, Path] = {}
 
 # 完了ジョブの保持時間（秒）
