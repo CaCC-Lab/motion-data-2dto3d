@@ -129,6 +129,7 @@ def start_processing(video_path: str, request: ProcessingRequest) -> str:
             progress=0.0,
             current_step="queued",
             log="",
+            output_format=request.output_format,
         )
 
     thread = threading.Thread(

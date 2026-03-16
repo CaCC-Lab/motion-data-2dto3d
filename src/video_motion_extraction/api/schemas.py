@@ -54,4 +54,5 @@ class JobStatusResponse(BaseModel):
     current_step: str = ""
     log: str = ""
     result_file: Optional[str] = None
+    output_format: Optional[Literal["bvh", "fbx", "json"]] = None
     error: Optional[str] = None

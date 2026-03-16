@@ -125,7 +125,7 @@ async def job_status_sse(job_id: str):
                 yield f"data: {json.dumps({'error': 'Job not found'})}\n\n"
                 return
 
-            data = job.model_dump()
+            data = job.model_dump(exclude={"result_file"})
             yield f"data: {json.dumps(data)}\n\n"
 
             if job.status in ("completed", "failed"):
