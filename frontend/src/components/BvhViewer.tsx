@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useCallback } from 'react'
+import React, { useEffect, useRef, useCallback, useState } from 'react'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { useBvhAnimation } from '../hooks/useBvhAnimation'
@@ -18,6 +18,8 @@ export default function BvhViewer({ bvhText, videoId }: Props) {
   const controlsRef = useRef<OrbitControls | null>(null)
   const frameIdRef = useRef<number>(0)
   const videoRef = useRef<HTMLVideoElement>(null)
+
+  const [showPip, setShowPip] = useState(true)
 
   const { state: animState, controls: animControls, update: animUpdate } = useBvhAnimation(
     bvhText,
@@ -161,12 +163,12 @@ export default function BvhViewer({ bvhText, videoId }: Props) {
     }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const showVideo = bvhText && videoId
+  const hasVideo = bvhText && videoId
 
   return (
     <div style={styles.wrapper}>
-      {/* 3Dビューワー */}
-      <div style={{ ...styles.viewerArea, height: showVideo ? '60%' : '100%' }}>
+      {/* 3Dビューワー（常に全画面） */}
+      <div style={{ ...styles.viewerArea, height: '100%' }}>
         <div ref={containerRef} style={styles.canvas} />
         {!bvhText && (
           <div style={styles.placeholder}>
@@ -188,27 +190,41 @@ export default function BvhViewer({ bvhText, videoId }: Props) {
             3D Motion
           </div>
         )}
-      </div>
 
-      {/* 元動画比較表示 */}
-      {showVideo && (
-        <div style={styles.videoArea}>
-          <div style={styles.videoLabel}>
-            <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor" style={{ opacity: 0.5 }}>
-              <polygon points="6,4 20,12 6,20" />
+        {/* PiPトグルボタン */}
+        {hasVideo && (
+          <button
+            onClick={() => setShowPip(prev => !prev)}
+            style={{
+              ...styles.pipToggle,
+              ...(showPip ? styles.pipToggleActive : styles.pipToggleInactive),
+            }}
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="2" y="3" width="20" height="14" rx="2" />
+              <rect x="12" y="9" width="8" height="6" rx="1" fill={showPip ? 'currentColor' : 'none'} />
             </svg>
-            Original Video
+            Video
+          </button>
+        )}
+
+        {/* PiPビデオオーバーレイ（非表示時もDOMに残して同期維持） */}
+        {hasVideo && (
+          <div style={{
+            ...styles.pipContainer,
+            display: showPip ? 'block' : 'none',
+          }}>
+            <video
+              ref={videoRef}
+              src={getVideoStreamUrl(videoId)}
+              style={styles.pipVideo}
+              muted
+              playsInline
+              loop
+            />
           </div>
-          <video
-            ref={videoRef}
-            src={getVideoStreamUrl(videoId)}
-            style={styles.video}
-            muted
-            playsInline
-            loop
-          />
-        </div>
-      )}
+        )}
+      </div>
 
       {/* 再生コントロール（一番下に配置） */}
       {bvhText && <PlaybackControls state={animState} controls={animControls} />}
@@ -288,40 +304,51 @@ const styles: Record<string, React.CSSProperties> = {
     boxShadow: '0 0 4px rgba(59, 59, 107, 0.4)',
     display: 'inline-block',
   },
-  videoArea: {
-    position: 'relative',
-    flex: 1,
-    minHeight: 0,
-    background: '#f0efeb',
-    borderTop: '1px solid var(--border-default)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    overflow: 'hidden',
-  },
-  videoLabel: {
+  pipToggle: {
     position: 'absolute',
-    top: '10px',
+    top: '12px',
     left: '12px',
     fontSize: '10px',
     fontFamily: 'var(--font-mono)',
-    fontWeight: 500,
-    color: 'var(--text-tertiary)',
-    background: 'rgba(255, 255, 255, 0.8)',
-    backdropFilter: 'blur(8px)',
+    fontWeight: 600,
     padding: '4px 10px',
     borderRadius: '12px',
-    border: '1px solid var(--border-subtle)',
-    zIndex: 1,
+    border: '1px solid rgba(59, 59, 107, 0.2)',
+    cursor: 'pointer',
     display: 'flex',
     alignItems: 'center',
     gap: '6px',
     letterSpacing: '0.5px',
     textTransform: 'uppercase' as const,
-  },
-  video: {
-    maxWidth: '100%',
-    maxHeight: '100%',
-    objectFit: 'contain',
-  },
+    zIndex: 2,
+    transition: 'all 0.2s ease',
+    outline: 'none',
+  } as React.CSSProperties,
+  pipToggleActive: {
+    color: 'var(--main)',
+    background: 'rgba(255, 255, 255, 0.9)',
+    backdropFilter: 'blur(8px)',
+  } as React.CSSProperties,
+  pipToggleInactive: {
+    color: 'var(--text-tertiary)',
+    background: 'rgba(255, 255, 255, 0.5)',
+    backdropFilter: 'blur(8px)',
+    opacity: 0.7,
+  } as React.CSSProperties,
+  pipContainer: {
+    position: 'absolute',
+    bottom: '56px',
+    right: '16px',
+    width: '240px',
+    borderRadius: 'var(--radius-md, 8px)',
+    boxShadow: '0 4px 16px rgba(0,0,0,0.15)',
+    border: '1px solid var(--border-default)',
+    overflow: 'hidden',
+    zIndex: 2,
+  } as React.CSSProperties,
+  pipVideo: {
+    width: '100%',
+    height: 'auto',
+    display: 'block',
+  } as React.CSSProperties,
 }
