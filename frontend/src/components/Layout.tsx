@@ -17,19 +17,24 @@ export default function Layout({ left, right }: Props) {
 const styles: Record<string, React.CSSProperties> = {
   container: {
     display: 'flex',
-    height: 'calc(100vh - 57px)',
+    height: 'calc(100vh - var(--header-height))',
     overflow: 'hidden',
   },
   left: {
-    width: '380px',
-    minWidth: '380px',
-    padding: '16px',
+    width: 'var(--sidebar-width)',
+    minWidth: 'var(--sidebar-width)',
+    padding: 'var(--space-lg)',
     overflowY: 'auto',
-    borderRight: '1px solid #2a2a35',
+    borderRight: '1px solid var(--border-default)',
+    background: 'var(--bg-surface)',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 'var(--space-lg)',
   },
   right: {
     flex: 1,
     position: 'relative',
     overflow: 'hidden',
+    background: 'var(--bg-root)',
   },
 }

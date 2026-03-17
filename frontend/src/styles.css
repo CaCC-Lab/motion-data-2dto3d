@@ -1,0 +1,198 @@
+/* === Motion Lab — Design System (Light) === */
+
+:root {
+  /* Light base palette */
+  --bg-root: #f5f4f0;
+  --bg-surface: #ffffff;
+  --bg-elevated: #ffffff;
+  --bg-hover: #eeeee8;
+  --bg-input: #f0efeb;
+
+  /* Borders */
+  --border-subtle: rgba(59, 59, 107, 0.08);
+  --border-default: rgba(59, 59, 107, 0.14);
+  --border-strong: rgba(59, 59, 107, 0.22);
+
+  /* Main: Deep indigo */
+  --main: #3b3b6b;
+  --main-dim: #2d2d54;
+  --main-light: rgba(59, 59, 107, 0.08);
+  --main-glow: rgba(59, 59, 107, 0.12);
+
+  /* Sub: Red */
+  --sub: #D24848;
+  --sub-dim: #a83838;
+  --sub-light: rgba(210, 72, 72, 0.08);
+
+  /* Accent: Gold */
+  --accent: #ccaf60;
+  --accent-dim: #b89a4a;
+  --accent-light: rgba(204, 175, 96, 0.12);
+  --accent-glow: rgba(204, 175, 96, 0.18);
+
+  /* Success / Error */
+  --success: #3a8a5c;
+  --success-dim: rgba(58, 138, 92, 0.1);
+  --error: #D24848;
+  --error-dim: rgba(210, 72, 72, 0.08);
+
+  /* Text */
+  --text-primary: #191919;
+  --text-secondary: #5a5a6e;
+  --text-tertiary: #8e8e9e;
+  --text-accent: #3b3b6b;
+
+  /* Typography */
+  --font-ui: 'Sora', sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+
+  /* Spacing */
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 12px;
+  --space-lg: 16px;
+  --space-xl: 24px;
+  --space-2xl: 32px;
+
+  /* Radius */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+
+  /* Sidebar */
+  --sidebar-width: 400px;
+  --header-height: 56px;
+}
+
+/* === Reset & Base === */
+*, *::before, *::after {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: var(--font-ui);
+  background: var(--bg-root);
+  color: var(--text-primary);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overflow: hidden;
+}
+
+/* === Scrollbar === */
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(59, 59, 107, 0.3);
+}
+
+/* === Custom Range Slider === */
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  cursor: pointer;
+  height: 20px;
+}
+
+input[type="range"]::-webkit-slider-runnable-track {
+  height: 3px;
+  background: var(--border-strong);
+  border-radius: 2px;
+}
+
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--main);
+  margin-top: -5.5px;
+  box-shadow: 0 1px 4px rgba(59, 59, 107, 0.3);
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+
+input[type="range"]::-webkit-slider-thumb:hover {
+  transform: scale(1.2);
+  box-shadow: 0 2px 8px rgba(59, 59, 107, 0.4);
+}
+
+input[type="range"]::-moz-range-track {
+  height: 3px;
+  background: var(--border-strong);
+  border-radius: 2px;
+}
+
+input[type="range"]::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--main);
+  border: none;
+  box-shadow: 0 1px 4px rgba(59, 59, 107, 0.3);
+}
+
+/* === Animations === */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slideInLeft {
+  from { opacity: 0; transform: translateX(-12px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes pulseGlow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(59, 59, 107, 0.2); }
+  50% { box-shadow: 0 0 16px 4px rgba(59, 59, 107, 0.1); }
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+@keyframes progressPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+
+@keyframes borderGlow {
+  0%, 100% { border-color: rgba(59, 59, 107, 0.2); }
+  50% { border-color: rgba(59, 59, 107, 0.4); }
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.animate-in {
+  animation: fadeIn 0.4s ease-out both;
+}
+
+.animate-in-delay-1 { animation-delay: 0.05s; }
+.animate-in-delay-2 { animation-delay: 0.1s; }
+.animate-in-delay-3 { animation-delay: 0.15s; }
+.animate-in-delay-4 { animation-delay: 0.2s; }
+
+/* === Focus styles === */
+input:focus, select:focus, button:focus-visible {
+  outline: 1px solid var(--main);
+  outline-offset: 1px;
+}
+
+select {
+  cursor: pointer;
+}

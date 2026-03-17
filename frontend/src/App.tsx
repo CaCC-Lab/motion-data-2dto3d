@@ -54,7 +54,6 @@ export default function App() {
       setAppState('processing')
       setError(null)
       setBvhText(null)
-      // 前回のSSE接続をクリーンアップ
       unsubscribeRef.current?.()
       const jid = await startProcessing({ ...params, video_id: videoId })
       setJobId(jid)
@@ -65,7 +64,7 @@ export default function App() {
           setJobStatus(status)
           if (status.status === 'completed') {
             setAppState('complete')
-            if (status.result_file?.endsWith('.bvh')) {
+            if (status.output_format === 'bvh') {
               getBvhText(jid).then(setBvhText).catch(() => {})
             }
           } else if (status.status === 'failed') {
@@ -115,25 +114,46 @@ export default function App() {
       )}
       {appState === 'complete' && jobId && <FileDownload jobId={jobId} />}
       {error && (
-        <div style={styles.error}>
-          <strong>Error:</strong> {error}
+        <div className="animate-in" style={styles.error}>
+          <span style={styles.errorDot} />
+          {error}
         </div>
       )}
       {appState === 'complete' && (
         <button onClick={handleReset} style={styles.resetBtn}>
+          <span style={{ opacity: 0.5, marginRight: '6px' }}>+</span>
           新しい動画を処理
         </button>
       )}
     </>
   )
 
-  const rightPanel = <BvhViewer bvhText={bvhText} />
+  const rightPanel = <BvhViewer bvhText={bvhText} videoId={videoId} />
 
   return (
     <div style={styles.app}>
       <header style={styles.header}>
-        <h1 style={styles.title}>Video Motion Extraction</h1>
-        <span style={styles.subtitle}>動画から3Dモーションデータを抽出</span>
+        <div style={styles.logoGroup}>
+          <div style={styles.logoMark} />
+          <div>
+            <h1 style={styles.title}>MOTION LAB</h1>
+            <span style={styles.subtitle}>Video Motion Extraction</span>
+          </div>
+        </div>
+        <div style={styles.statusChip}>
+          <span style={{
+            ...styles.statusDot,
+            background: appState === 'processing' ? 'var(--accent)' :
+              appState === 'complete' ? 'var(--success)' :
+              appState === 'error' ? 'var(--error)' : 'var(--text-tertiary)',
+          }} />
+          <span style={styles.statusText}>
+            {appState === 'idle' ? 'Ready' :
+             appState === 'uploading' ? 'Uploading...' :
+             appState === 'processing' ? 'Processing...' :
+             appState === 'complete' ? 'Complete' : 'Error'}
+          </span>
+        </div>
       </header>
       <Layout left={leftPanel} right={rightPanel} />
     </div>
@@ -143,43 +163,99 @@ export default function App() {
 const styles: Record<string, React.CSSProperties> = {
   app: {
     minHeight: '100vh',
-    background: '#0f0f13',
-    color: '#e0e0e0',
+    background: 'var(--bg-root)',
+    color: 'var(--text-primary)',
   },
   header: {
-    padding: '16px 24px',
-    borderBottom: '1px solid #2a2a35',
+    height: 'var(--header-height)',
+    padding: '0 var(--space-xl)',
+    borderBottom: '1px solid var(--border-default)',
     display: 'flex',
-    alignItems: 'baseline',
-    gap: '16px',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    background: 'var(--bg-surface)',
+  },
+  logoGroup: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 'var(--space-md)',
+  },
+  logoMark: {
+    width: '28px',
+    height: '28px',
+    borderRadius: '8px',
+    background: 'linear-gradient(135deg, var(--main) 0%, var(--main-dim) 100%)',
+    boxShadow: '0 2px 8px rgba(59, 59, 107, 0.25)',
   },
   title: {
-    fontSize: '20px',
+    fontSize: '14px',
     fontWeight: 700,
-    color: '#fff',
+    color: 'var(--main)',
+    letterSpacing: '2.5px',
+    fontFamily: 'var(--font-ui)',
+    lineHeight: 1,
   },
   subtitle: {
-    fontSize: '14px',
-    color: '#888',
+    fontSize: '10px',
+    color: 'var(--text-tertiary)',
+    fontFamily: 'var(--font-mono)',
+    fontWeight: 400,
+    letterSpacing: '0.5px',
+  },
+  statusChip: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px',
+    padding: '5px 12px',
+    background: 'var(--bg-root)',
+    borderRadius: '20px',
+    border: '1px solid var(--border-default)',
+  },
+  statusDot: {
+    width: '6px',
+    height: '6px',
+    borderRadius: '50%',
+    display: 'inline-block',
+  },
+  statusText: {
+    fontSize: '11px',
+    fontFamily: 'var(--font-mono)',
+    color: 'var(--text-secondary)',
+    fontWeight: 500,
   },
   error: {
-    margin: '12px 0',
-    padding: '12px',
-    background: '#3d1c1c',
-    border: '1px solid #7a2e2e',
-    borderRadius: '8px',
-    color: '#ff8888',
-    fontSize: '13px',
+    margin: 'var(--space-md) 0',
+    padding: 'var(--space-md) var(--space-lg)',
+    background: 'var(--error-dim)',
+    border: '1px solid rgba(210, 72, 72, 0.15)',
+    borderRadius: 'var(--radius-md)',
+    color: 'var(--sub)',
+    fontSize: '12px',
+    fontFamily: 'var(--font-mono)',
+    display: 'flex',
+    alignItems: 'center',
+    gap: 'var(--space-sm)',
+  },
+  errorDot: {
+    width: '6px',
+    height: '6px',
+    borderRadius: '50%',
+    background: 'var(--error)',
+    flexShrink: 0,
+    display: 'inline-block',
   },
   resetBtn: {
-    marginTop: '12px',
-    padding: '10px 20px',
-    background: '#2a2a35',
-    color: '#e0e0e0',
-    border: '1px solid #444',
-    borderRadius: '8px',
+    marginTop: 'var(--space-md)',
+    padding: 'var(--space-md) var(--space-lg)',
+    background: 'var(--bg-surface)',
+    color: 'var(--text-secondary)',
+    border: '1px solid var(--border-default)',
+    borderRadius: 'var(--radius-md)',
     cursor: 'pointer',
-    fontSize: '14px',
+    fontSize: '13px',
+    fontFamily: 'var(--font-ui)',
+    fontWeight: 500,
     width: '100%',
+    transition: 'all 0.2s',
   },
 }

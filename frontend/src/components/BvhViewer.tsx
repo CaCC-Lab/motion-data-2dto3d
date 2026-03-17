@@ -1,20 +1,23 @@
-import React, { useEffect, useRef } from 'react'
+import React, { useEffect, useRef, useCallback } from 'react'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { useBvhAnimation } from '../hooks/useBvhAnimation'
 import PlaybackControls from './PlaybackControls'
+import { getVideoStreamUrl } from '../api/client'
 
 interface Props {
   bvhText: string | null
+  videoId: string | null
 }
 
-export default function BvhViewer({ bvhText }: Props) {
+export default function BvhViewer({ bvhText, videoId }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null)
   const sceneRef = useRef<THREE.Scene | null>(null)
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null)
   const controlsRef = useRef<OrbitControls | null>(null)
   const frameIdRef = useRef<number>(0)
+  const videoRef = useRef<HTMLVideoElement>(null)
 
   const { state: animState, controls: animControls, update: animUpdate } = useBvhAnimation(
     bvhText,
@@ -22,15 +25,58 @@ export default function BvhViewer({ bvhText }: Props) {
     cameraRef,
   )
 
+  // 動画の再生/一時停止をアニメーションに同期
+  const prevPlayingRef = useRef(false)
+  useEffect(() => {
+    const video = videoRef.current
+    if (!video || !bvhText) return
+    if (animState.isPlaying && !prevPlayingRef.current) {
+      video.play().catch(() => {})
+    } else if (!animState.isPlaying && prevPlayingRef.current) {
+      video.pause()
+    }
+    prevPlayingRef.current = animState.isPlaying
+  }, [animState.isPlaying, bvhText])
+
+  // シーク同期
+  const prevTimeRef = useRef(0)
+  useEffect(() => {
+    const video = videoRef.current
+    if (!video || !bvhText) return
+    if (Math.abs(animState.currentTime - prevTimeRef.current) > 0.1) {
+      video.currentTime = animState.currentTime
+    }
+    prevTimeRef.current = animState.currentTime
+  }, [animState.currentTime, bvhText])
+
+  // 速度同期
+  useEffect(() => {
+    const video = videoRef.current
+    if (video) video.playbackRate = animState.speed
+  }, [animState.speed])
+
   // Three.jsシーン初期化
   useEffect(() => {
     const container = containerRef.current
     if (!container) return
 
-    // Scene
     const scene = new THREE.Scene()
-    scene.background = new THREE.Color('#0f0f13')
     sceneRef.current = scene
+
+    // ライトモード背景（明るいグレーのグラデーション）
+    const canvas = document.createElement('canvas')
+    canvas.width = 2
+    canvas.height = 256
+    const ctx = canvas.getContext('2d')!
+    const grad = ctx.createLinearGradient(0, 0, 0, 256)
+    grad.addColorStop(0, '#e8e6e0')
+    grad.addColorStop(0.5, '#dddbd5')
+    grad.addColorStop(1, '#d0cec8')
+    ctx.fillStyle = grad
+    ctx.fillRect(0, 0, 2, 256)
+    const bgTexture = new THREE.CanvasTexture(canvas)
+    bgTexture.mapping = THREE.EquirectangularReflectionMapping
+    scene.background = bgTexture
 
     // Camera
     const camera = new THREE.PerspectiveCamera(60, container.clientWidth / container.clientHeight, 0.01, 1000)
@@ -41,6 +87,8 @@ export default function BvhViewer({ bvhText }: Props) {
     const renderer = new THREE.WebGLRenderer({ antialias: true })
     renderer.setSize(container.clientWidth, container.clientHeight)
     renderer.setPixelRatio(window.devicePixelRatio)
+    renderer.toneMapping = THREE.ACESFilmicToneMapping
+    renderer.toneMappingExposure = 1.4
     container.appendChild(renderer.domElement)
     rendererRef.current = renderer
 
@@ -51,18 +99,37 @@ export default function BvhViewer({ bvhText }: Props) {
     orbitControls.target.set(0, 1, 0)
     controlsRef.current = orbitControls
 
-    // Lights
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.6)
+    // Lights — 明るい自然光 + メインカラーのフィルライト
+    const ambientLight = new THREE.AmbientLight(0xcccccc, 0.6)
     scene.add(ambientLight)
-    const dirLight = new THREE.DirectionalLight(0xffffff, 0.8)
+    const dirLight = new THREE.DirectionalLight(0xffffff, 1.2)
     dirLight.position.set(5, 10, 7)
     scene.add(dirLight)
+    const fillLight = new THREE.DirectionalLight(0x3b3b6b, 0.3)
+    fillLight.position.set(-5, 3, -5)
+    scene.add(fillLight)
 
-    // Ground grid
-    const grid = new THREE.GridHelper(10, 20, '#2a2a35', '#1a1a22')
+    // グラウンドグリッド（明るい色調）
+    const grid = new THREE.GridHelper(10, 20, '#b0aeb0', '#c8c6c0')
+    grid.material.transparent = true
+    grid.material.opacity = 0.5
     scene.add(grid)
 
-    // Resize handler
+    // グラウンドプレーン
+    const groundGeo = new THREE.PlaneGeometry(10, 10)
+    const groundMat = new THREE.MeshStandardMaterial({
+      color: '#c8c6c0',
+      metalness: 0.05,
+      roughness: 0.9,
+      transparent: true,
+      opacity: 0.3,
+    })
+    const ground = new THREE.Mesh(groundGeo, groundMat)
+    ground.rotation.x = -Math.PI / 2
+    ground.position.y = -0.001
+    scene.add(ground)
+
+    // Resize
     const onResize = () => {
       if (!container) return
       const w = container.clientWidth
@@ -87,20 +154,63 @@ export default function BvhViewer({ bvhText }: Props) {
       cancelAnimationFrame(frameIdRef.current)
       orbitControls.dispose()
       renderer.dispose()
+      bgTexture.dispose()
+      groundGeo.dispose()
+      groundMat.dispose()
       container.removeChild(renderer.domElement)
     }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
+  const showVideo = bvhText && videoId
+
   return (
     <div style={styles.wrapper}>
-      <div ref={containerRef} style={styles.canvas} />
-      {!bvhText && (
-        <div style={styles.placeholder}>
-          <div style={styles.placeholderIcon}>&#x1F3AD;</div>
-          <div>動画を処理するとここに3Dスケルトンが表示されます</div>
-          <div style={styles.placeholderHint}>マウスで回転・ズーム・パン操作可能</div>
+      {/* 3Dビューワー */}
+      <div style={{ ...styles.viewerArea, height: showVideo ? '60%' : '100%' }}>
+        <div ref={containerRef} style={styles.canvas} />
+        {!bvhText && (
+          <div style={styles.placeholder}>
+            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" style={{ color: '#3b3b6b', marginBottom: '16px', opacity: 0.4 }}>
+              <circle cx="12" cy="5" r="2" />
+              <line x1="12" y1="7" x2="12" y2="15" />
+              <line x1="12" y1="10" x2="8" y2="13" />
+              <line x1="12" y1="10" x2="16" y2="13" />
+              <line x1="12" y1="15" x2="9" y2="20" />
+              <line x1="12" y1="15" x2="15" y2="20" />
+            </svg>
+            <div style={styles.placeholderTitle}>3D Skeleton Viewer</div>
+            <div style={styles.placeholderHint}>動画を処理するとここにモーションが表示されます</div>
+          </div>
+        )}
+        {bvhText && (
+          <div style={styles.viewerBadge}>
+            <span style={styles.viewerBadgeDot} />
+            3D Motion
+          </div>
+        )}
+      </div>
+
+      {/* 元動画比較表示 */}
+      {showVideo && (
+        <div style={styles.videoArea}>
+          <div style={styles.videoLabel}>
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor" style={{ opacity: 0.5 }}>
+              <polygon points="6,4 20,12 6,20" />
+            </svg>
+            Original Video
+          </div>
+          <video
+            ref={videoRef}
+            src={getVideoStreamUrl(videoId)}
+            style={styles.video}
+            muted
+            playsInline
+            loop
+          />
         </div>
       )}
+
+      {/* 再生コントロール（一番下に配置） */}
       {bvhText && <PlaybackControls state={animState} controls={animControls} />}
     </div>
   )
@@ -111,6 +221,14 @@ const styles: Record<string, React.CSSProperties> = {
     position: 'relative',
     width: '100%',
     height: '100%',
+    display: 'flex',
+    flexDirection: 'column',
+    background: 'var(--bg-root)',
+  },
+  viewerArea: {
+    position: 'relative',
+    width: '100%',
+    flexShrink: 0,
   },
   canvas: {
     width: '100%',
@@ -122,17 +240,88 @@ const styles: Record<string, React.CSSProperties> = {
     left: '50%',
     transform: 'translate(-50%, -50%)',
     textAlign: 'center' as const,
-    color: '#555',
-    fontSize: '14px',
+    color: 'var(--text-tertiary)',
     pointerEvents: 'none',
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
   },
-  placeholderIcon: {
-    fontSize: '48px',
-    marginBottom: '12px',
+  placeholderTitle: {
+    fontSize: '13px',
+    fontWeight: 600,
+    fontFamily: 'var(--font-mono)',
+    color: 'var(--text-secondary)',
+    letterSpacing: '1px',
+    textTransform: 'uppercase' as const,
   },
   placeholderHint: {
-    fontSize: '12px',
-    marginTop: '6px',
-    color: '#444',
+    fontSize: '11px',
+    marginTop: '8px',
+    color: 'var(--text-tertiary)',
+    fontFamily: 'var(--font-ui)',
+  },
+  viewerBadge: {
+    position: 'absolute',
+    top: '12px',
+    right: '12px',
+    fontSize: '10px',
+    fontFamily: 'var(--font-mono)',
+    fontWeight: 600,
+    color: 'var(--main)',
+    background: 'rgba(255, 255, 255, 0.85)',
+    backdropFilter: 'blur(8px)',
+    padding: '4px 10px',
+    borderRadius: '12px',
+    border: '1px solid rgba(59, 59, 107, 0.2)',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px',
+    letterSpacing: '0.5px',
+    textTransform: 'uppercase' as const,
+    zIndex: 1,
+  },
+  viewerBadgeDot: {
+    width: '5px',
+    height: '5px',
+    borderRadius: '50%',
+    background: 'var(--main)',
+    boxShadow: '0 0 4px rgba(59, 59, 107, 0.4)',
+    display: 'inline-block',
+  },
+  videoArea: {
+    position: 'relative',
+    flex: 1,
+    minHeight: 0,
+    background: '#f0efeb',
+    borderTop: '1px solid var(--border-default)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  videoLabel: {
+    position: 'absolute',
+    top: '10px',
+    left: '12px',
+    fontSize: '10px',
+    fontFamily: 'var(--font-mono)',
+    fontWeight: 500,
+    color: 'var(--text-tertiary)',
+    background: 'rgba(255, 255, 255, 0.8)',
+    backdropFilter: 'blur(8px)',
+    padding: '4px 10px',
+    borderRadius: '12px',
+    border: '1px solid var(--border-subtle)',
+    zIndex: 1,
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px',
+    letterSpacing: '0.5px',
+    textTransform: 'uppercase' as const,
+  },
+  video: {
+    maxWidth: '100%',
+    maxHeight: '100%',
+    objectFit: 'contain',
   },
 }

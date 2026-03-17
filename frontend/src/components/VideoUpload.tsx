@@ -12,9 +12,7 @@ export default function VideoUpload({ onUpload, videoInfo, disabled }: Props) {
   const inputRef = useRef<HTMLInputElement>(null)
 
   const handleFile = useCallback(
-    (file: File) => {
-      if (!disabled) onUpload(file)
-    },
+    (file: File) => { if (!disabled) onUpload(file) },
     [onUpload, disabled],
   )
 
@@ -29,18 +27,18 @@ export default function VideoUpload({ onUpload, videoInfo, disabled }: Props) {
   )
 
   return (
-    <div style={styles.section}>
-      <h3 style={styles.sectionTitle}>動画入力</h3>
+    <div className="animate-in">
+      <h3 style={styles.sectionTitle}>
+        <span style={styles.sectionNum}>01</span>
+        INPUT
+      </h3>
       <div
         style={{
           ...styles.dropzone,
           ...(dragOver ? styles.dropzoneActive : {}),
           ...(disabled ? styles.disabled : {}),
         }}
-        onDragOver={(e) => {
-          e.preventDefault()
-          setDragOver(true)
-        }}
+        onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
         onDragLeave={() => setDragOver(false)}
         onDrop={handleDrop}
         onClick={() => !disabled && inputRef.current?.click()}
@@ -55,35 +53,24 @@ export default function VideoUpload({ onUpload, videoInfo, disabled }: Props) {
             if (file) handleFile(file)
           }}
         />
-        <div style={styles.icon}>&#x1F3AC;</div>
-        <div style={styles.text}>
-          クリックまたはドラッグ&ドロップで動画をアップロード
+        <div style={styles.uploadIcon}>
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+            <polyline points="17 8 12 3 7 8" />
+            <line x1="12" y1="3" x2="12" y2="15" />
+          </svg>
         </div>
-        <div style={styles.hint}>MP4, AVI, MOV, MKV, WebM (最大500MB)</div>
+        <div style={styles.text}>ドラッグ&ドロップ または クリック</div>
+        <div style={styles.hint}>MP4, AVI, MOV, MKV, WebM — 最大500MB</div>
       </div>
       {videoInfo && (
-        <div style={styles.info}>
-          <div style={styles.infoRow}>
-            <span>解像度</span>
-            <span>
-              {videoInfo.width}x{videoInfo.height}
-            </span>
-          </div>
-          <div style={styles.infoRow}>
-            <span>FPS</span>
-            <span>{videoInfo.fps}</span>
-          </div>
-          <div style={styles.infoRow}>
-            <span>フレーム数</span>
-            <span>{videoInfo.total_frames}</span>
-          </div>
-          <div style={styles.infoRow}>
-            <span>長さ</span>
-            <span>{videoInfo.duration.toFixed(2)}s</span>
-          </div>
-          <div style={styles.infoRow}>
-            <span>コーデック</span>
-            <span>{videoInfo.codec}</span>
+        <div style={styles.info} className="animate-in">
+          <div style={styles.infoGrid}>
+            <InfoCell label="解像度" value={`${videoInfo.width}×${videoInfo.height}`} />
+            <InfoCell label="FPS" value={String(videoInfo.fps)} />
+            <InfoCell label="フレーム" value={String(videoInfo.total_frames)} />
+            <InfoCell label="長さ" value={`${videoInfo.duration.toFixed(2)}s`} />
+            <InfoCell label="コーデック" value={videoInfo.codec} />
           </div>
         </div>
       )}
@@ -91,47 +78,97 @@ export default function VideoUpload({ onUpload, videoInfo, disabled }: Props) {
   )
 }
 
+function InfoCell({ label, value }: { label: string; value: string }) {
+  return (
+    <div style={styles.infoCell}>
+      <span style={styles.infoLabel}>{label}</span>
+      <span style={styles.infoValue}>{value}</span>
+    </div>
+  )
+}
+
 const styles: Record<string, React.CSSProperties> = {
-  section: { marginBottom: '16px' },
   sectionTitle: {
-    fontSize: '13px',
+    fontSize: '11px',
     fontWeight: 600,
-    color: '#aaa',
+    color: 'var(--text-tertiary)',
     textTransform: 'uppercase' as const,
-    letterSpacing: '0.5px',
-    marginBottom: '8px',
+    letterSpacing: '1.5px',
+    marginBottom: 'var(--space-sm)',
+    fontFamily: 'var(--font-mono)',
+    display: 'flex',
+    alignItems: 'center',
+    gap: 'var(--space-sm)',
+  },
+  sectionNum: {
+    color: 'var(--main)',
+    fontSize: '10px',
+    fontWeight: 600,
   },
   dropzone: {
-    border: '2px dashed #3a3a45',
-    borderRadius: '10px',
-    padding: '24px',
+    border: '1px dashed var(--border-strong)',
+    borderRadius: 'var(--radius-lg)',
+    padding: 'var(--space-xl)',
     textAlign: 'center' as const,
     cursor: 'pointer',
-    transition: 'all 0.2s',
-    background: '#16161d',
+    transition: 'all 0.25s ease',
+    background: 'var(--bg-root)',
   },
   dropzoneActive: {
-    borderColor: '#6366f1',
-    background: '#1a1a2e',
+    borderColor: 'var(--main)',
+    background: 'var(--main-light)',
+    borderStyle: 'solid',
   },
   disabled: {
-    opacity: 0.5,
+    opacity: 0.4,
     cursor: 'not-allowed',
+    pointerEvents: 'none' as const,
   },
-  icon: { fontSize: '32px', marginBottom: '8px' },
-  text: { fontSize: '14px', color: '#ccc', marginBottom: '4px' },
-  hint: { fontSize: '12px', color: '#666' },
-  info: {
-    marginTop: '10px',
-    padding: '10px',
-    background: '#16161d',
-    borderRadius: '8px',
-    fontSize: '13px',
-  },
-  infoRow: {
+  uploadIcon: {
+    color: 'var(--text-tertiary)',
+    marginBottom: 'var(--space-md)',
     display: 'flex',
-    justifyContent: 'space-between',
-    padding: '3px 0',
-    color: '#bbb',
+    justifyContent: 'center',
+  },
+  text: {
+    fontSize: '13px',
+    color: 'var(--text-secondary)',
+    marginBottom: 'var(--space-xs)',
+    fontWeight: 500,
+  },
+  hint: {
+    fontSize: '11px',
+    color: 'var(--text-tertiary)',
+    fontFamily: 'var(--font-mono)',
+  },
+  info: {
+    marginTop: 'var(--space-sm)',
+    padding: 'var(--space-md)',
+    background: 'var(--bg-root)',
+    borderRadius: 'var(--radius-md)',
+    border: '1px solid var(--border-subtle)',
+  },
+  infoGrid: {
+    display: 'grid',
+    gridTemplateColumns: '1fr 1fr',
+    gap: 'var(--space-sm) var(--space-lg)',
+  },
+  infoCell: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '2px',
+  },
+  infoLabel: {
+    fontSize: '10px',
+    color: 'var(--text-tertiary)',
+    fontFamily: 'var(--font-mono)',
+    textTransform: 'uppercase' as const,
+    letterSpacing: '0.5px',
+  },
+  infoValue: {
+    fontSize: '13px',
+    color: 'var(--text-primary)',
+    fontFamily: 'var(--font-mono)',
+    fontWeight: 500,
   },
 }

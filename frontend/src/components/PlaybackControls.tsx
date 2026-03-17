@@ -34,8 +34,18 @@ export default function PlaybackControls({ state, controls }: Props) {
   return (
     <div style={styles.container}>
       <button style={styles.playBtn} onClick={controls.toggle}>
-        {state.isPlaying ? '\u23F8' : '\u25B6'}
+        {state.isPlaying ? (
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+            <rect x="6" y="4" width="4" height="16" rx="1" />
+            <rect x="14" y="4" width="4" height="16" rx="1" />
+          </svg>
+        ) : (
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+            <polygon points="6,4 20,12 6,20" />
+          </svg>
+        )}
       </button>
+
       <input
         type="range"
         min={0}
@@ -45,9 +55,13 @@ export default function PlaybackControls({ state, controls }: Props) {
         onChange={(e) => controls.seek(Number(e.target.value))}
         style={styles.timeline}
       />
+
       <span style={styles.time}>
-        {formatTime(state.currentTime)} / {formatTime(state.duration)}
+        {formatTime(state.currentTime)}
+        <span style={styles.timeSep}>/</span>
+        {formatTime(state.duration)}
       </span>
+
       <div style={styles.speedGroup}>
         {SPEED_OPTIONS.map((s) => (
           <button
@@ -69,58 +83,41 @@ export default function PlaybackControls({ state, controls }: Props) {
 const styles: Record<string, React.CSSProperties> = {
   container: {
     position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    display: 'flex',
-    alignItems: 'center',
-    gap: '8px',
+    bottom: 0, left: 0, right: 0,
+    display: 'flex', alignItems: 'center', gap: '10px',
     padding: '10px 16px',
-    background: 'rgba(15,15,19,0.9)',
-    backdropFilter: 'blur(8px)',
-    borderTop: '1px solid #2a2a35',
+    background: 'rgba(255, 255, 255, 0.92)',
+    backdropFilter: 'blur(12px)',
+    borderTop: '1px solid var(--border-default)',
   },
   playBtn: {
-    width: '36px',
-    height: '36px',
-    borderRadius: '50%',
-    border: 'none',
-    background: '#6366f1',
-    color: '#fff',
-    fontSize: '16px',
-    cursor: 'pointer',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexShrink: 0,
+    width: '32px', height: '32px', borderRadius: '50%',
+    border: '1px solid rgba(59, 59, 107, 0.25)',
+    background: 'rgba(59, 59, 107, 0.08)',
+    color: 'var(--main)', fontSize: '14px', cursor: 'pointer',
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    flexShrink: 0, transition: 'all 0.2s',
   },
-  timeline: {
-    flex: 1,
-    accentColor: '#6366f1',
-  },
+  timeline: { flex: 1 },
   time: {
-    fontSize: '12px',
-    color: '#888',
-    fontFamily: 'monospace',
-    minWidth: '90px',
-    textAlign: 'right' as const,
+    fontSize: '11px', color: 'var(--text-secondary)',
+    fontFamily: 'var(--font-mono)', fontWeight: 500,
+    minWidth: '90px', textAlign: 'right' as const,
   },
-  speedGroup: {
-    display: 'flex',
-    gap: '2px',
+  timeSep: {
+    color: 'var(--text-tertiary)', margin: '0 2px',
   },
+  speedGroup: { display: 'flex', gap: '2px' },
   speedBtn: {
-    padding: '4px 8px',
-    fontSize: '11px',
-    background: 'transparent',
-    color: '#888',
-    border: '1px solid #333',
-    borderRadius: '4px',
-    cursor: 'pointer',
+    padding: '3px 7px', fontSize: '10px',
+    background: 'transparent', color: 'var(--text-tertiary)',
+    border: '1px solid var(--border-default)', borderRadius: '4px',
+    cursor: 'pointer', fontFamily: 'var(--font-mono)', fontWeight: 500,
+    transition: 'all 0.15s',
   },
   speedActive: {
-    background: '#6366f1',
-    color: '#fff',
-    borderColor: '#6366f1',
+    background: 'rgba(59, 59, 107, 0.1)',
+    color: 'var(--main)',
+    borderColor: 'rgba(59, 59, 107, 0.3)',
   },
 }
