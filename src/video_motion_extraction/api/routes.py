@@ -164,6 +164,22 @@ async def download_result(job_id: str):
     )
 
 
+@router.get("/video/{video_id}/stream")
+async def stream_video(video_id: str):
+    """アップロード動画のストリーミング配信."""
+    video_path = get_video_path(video_id)
+    if not video_path:
+        raise HTTPException(status_code=404, detail="Video not found")
+    try:
+        return FileResponse(
+            path=str(video_path),
+            media_type="video/mp4",
+            filename=video_path.name,
+        )
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="Video file not found")
+
+
 @router.get("/bvh/{job_id}")
 async def get_bvh_text(job_id: str):
     """BVHテキスト取得（Three.js用）."""

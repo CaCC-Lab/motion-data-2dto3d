@@ -65,6 +65,10 @@ export function getResultDownloadUrl(jobId: string): string {
   return `${BASE}/jobs/${jobId}/result`
 }
 
+export function getVideoStreamUrl(videoId: string): string {
+  return `${BASE}/video/${videoId}/stream`
+}
+
 export async function getBvhText(jobId: string): Promise<string> {
   const res = await fetch(`${BASE}/bvh/${jobId}`)
   if (!res.ok) throw new Error('Failed to get BVH data')
