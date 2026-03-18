@@ -36,4 +36,21 @@ export interface JobStatus {
   error: string | null
 }
 
+export interface HistoryItem {
+  id: number
+  job_id: string
+  created_at: string
+  filename: string
+  thumbnail_path: string | null
+  bvh_path: string | null
+  output_format: string
+  video_width: number | null
+  video_height: number | null
+  video_fps: number | null
+  video_duration: number | null
+  params_json: string
+  status: string
+  processing_log: string | null
+}
+
 export type AppState = 'idle' | 'uploading' | 'processing' | 'complete' | 'error'

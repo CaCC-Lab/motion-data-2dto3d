@@ -9,6 +9,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
+from video_motion_extraction.api.history_db import init_db
+from video_motion_extraction.api.pipeline_runner import (
+    _history_base,
+    _history_bvh_dir,
+    _history_db_path,
+    _history_thumb_dir,
+)
 from video_motion_extraction.api.routes import router
 
 
@@ -44,6 +51,12 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    # 履歴ディレクトリとDB初期化
+    _history_base.mkdir(parents=True, exist_ok=True)
+    _history_bvh_dir.mkdir(parents=True, exist_ok=True)
+    _history_thumb_dir.mkdir(parents=True, exist_ok=True)
+    init_db(_history_db_path)
 
     # APIルーター登録
     app.include_router(router)

@@ -54,6 +54,9 @@ addon.py
 # Large sample videos
 data/sample/*.mp4
 
+# Processing history (runtime DB and generated files)
+data/history/
+
 # WSL / Windows metadata
 *:Zone.Identifier
 wsl.localhost/

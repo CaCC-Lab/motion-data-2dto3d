@@ -1,12 +1,13 @@
-import React, { useState, useCallback, useRef } from 'react'
-import type { AppState, VideoInfo, JobStatus, ProcessingParams } from './types'
+import React, { useState, useCallback, useRef, useEffect } from 'react'
+import type { AppState, VideoInfo, JobStatus, ProcessingParams, HistoryItem } from './types'
 import Layout from './components/Layout'
 import VideoUpload from './components/VideoUpload'
 import ParameterForm from './components/ParameterForm'
 import ProcessingLog from './components/ProcessingLog'
 import FileDownload from './components/FileDownload'
 import BvhViewer from './components/BvhViewer'
-import { uploadVideo, getVideoInfo, startProcessing, subscribeJobStatus, getBvhText } from './api/client'
+import ProcessingHistory from './components/ProcessingHistory'
+import { uploadVideo, getVideoInfo, startProcessing, subscribeJobStatus, getBvhText, getHistoryList, deleteHistoryItem, getHistoryBvhText } from './api/client'
 
 const DEFAULT_PARAMS: Omit<ProcessingParams, 'video_id'> = {
   fps: 30,
@@ -29,7 +30,22 @@ export default function App() {
   const [jobStatus, setJobStatus] = useState<JobStatus | null>(null)
   const [bvhText, setBvhText] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [historyItems, setHistoryItems] = useState<HistoryItem[]>([])
+  const [selectedHistoryId, setSelectedHistoryId] = useState<string | null>(null)
   const unsubscribeRef = useRef<(() => void) | null>(null)
+
+  const fetchHistory = useCallback(async () => {
+    try {
+      const { items } = await getHistoryList()
+      setHistoryItems(items)
+    } catch {
+      // 履歴取得失敗は静かに無視
+    }
+  }, [])
+
+  useEffect(() => {
+    fetchHistory()
+  }, [fetchHistory])
 
   const handleUpload = useCallback(async (file: File) => {
     try {
@@ -64,6 +80,8 @@ export default function App() {
           setJobStatus(status)
           if (status.status === 'completed') {
             setAppState('complete')
+            setSelectedHistoryId(null)
+            fetchHistory()
             if (status.output_format === 'bvh') {
               getBvhText(jid).then(setBvhText).catch(() => {})
             }
@@ -81,7 +99,31 @@ export default function App() {
       setError(e instanceof Error ? e.message : 'Failed to start processing')
       setAppState('error')
     }
-  }, [videoId, params])
+  }, [videoId, params, fetchHistory])
+
+  const handleHistorySelect = useCallback(async (historyJobId: string) => {
+    try {
+      const bvh = await getHistoryBvhText(historyJobId)
+      setBvhText(bvh)
+      setSelectedHistoryId(historyJobId)
+      setVideoId(null)
+    } catch {
+      setError('履歴BVHの読み込みに失敗しました')
+    }
+  }, [])
+
+  const handleHistoryDelete = useCallback(async (historyJobId: string) => {
+    try {
+      await deleteHistoryItem(historyJobId)
+      if (selectedHistoryId === historyJobId) {
+        setBvhText(null)
+        setSelectedHistoryId(null)
+      }
+      fetchHistory()
+    } catch {
+      setError('履歴の削除に失敗しました')
+    }
+  }, [selectedHistoryId, fetchHistory])
 
   const handleReset = useCallback(() => {
     unsubscribeRef.current?.()
@@ -125,6 +167,12 @@ export default function App() {
           新しい動画を処理
         </button>
       )}
+      <ProcessingHistory
+        items={historyItems}
+        onSelect={handleHistorySelect}
+        onDelete={handleHistoryDelete}
+        selectedJobId={selectedHistoryId}
+      />
     </>
   )
 

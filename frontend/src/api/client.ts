@@ -1,4 +1,4 @@
-import type { UploadResponse, VideoInfo, ProcessingParams, JobStatus } from '../types'
+import type { UploadResponse, VideoInfo, ProcessingParams, JobStatus, HistoryItem } from '../types'
 
 const BASE = '/api'
 
@@ -74,4 +74,28 @@ export async function getBvhText(jobId: string): Promise<string> {
   if (!res.ok) throw new Error('Failed to get BVH data')
   const data = await res.json()
   return data.bvh
+}
+
+// === History API ===
+
+export async function getHistoryList(limit = 50, offset = 0): Promise<{ items: HistoryItem[]; total: number }> {
+  const res = await fetch(`${BASE}/history?limit=${limit}&offset=${offset}`)
+  if (!res.ok) throw new Error('Failed to get history')
+  return res.json()
+}
+
+export async function deleteHistoryItem(jobId: string): Promise<void> {
+  const res = await fetch(`${BASE}/history/${jobId}`, { method: 'DELETE' })
+  if (!res.ok) throw new Error('Failed to delete history item')
+}
+
+export async function getHistoryBvhText(jobId: string): Promise<string> {
+  const res = await fetch(`${BASE}/history/${jobId}/bvh`)
+  if (!res.ok) throw new Error('Failed to get history BVH data')
+  const data = await res.json()
+  return data.bvh
+}
+
+export function getHistoryThumbnailUrl(jobId: string): string {
+  return `${BASE}/history/${jobId}/thumbnail`
 }
