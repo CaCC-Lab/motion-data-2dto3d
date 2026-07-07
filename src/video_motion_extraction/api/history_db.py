@@ -1,7 +1,6 @@
 """SQLiteベースの処理履歴管理."""
 
 import sqlite3
-from pathlib import Path
 from typing import Optional
 
 from video_motion_extraction.api.history_schemas import HistoryEntry, HistoryItem

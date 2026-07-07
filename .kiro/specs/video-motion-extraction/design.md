@@ -177,6 +177,49 @@ class DataProcessor:
 - 角速度・加速度の算出
 - ノイズ除去とスムージング
 
+### Component 3.5: MotionExtractor（メインパイプライン）
+
+**目的**: 全コンポーネントを結合した単一のパイプライン実装を提供し、CLI / Gradio GUI / FastAPI から共通利用する
+
+**インターフェース**:
+```python
+class MotionExtractor:
+    def __init__(self, options: Optional[PipelineOptions] = None) -> None: ...
+
+    def process(
+        self,
+        video_path: str,
+        on_progress: Optional[ProgressCallback] = None,
+    ) -> PipelineResult:
+        """VideoExtractor → PoseEstimator → DataProcessor → Converter3D を順に実行"""
+
+    def export(self, motion_data: Motion3DData, output_path: str, output_format: str) -> None: ...
+```
+
+**責務**:
+- パイプライン全体のオーケストレーション（`pipeline.py`）
+- 進捗コールバックによるCLI/GUI/APIへの進捗通知
+- 角速度算出のオプション実行（`PipelineOptions.compute_angular_velocity`）
+- strictモード（`VME_STRICT` 環境変数 / オプション）とデバイス選択（`VME_DEVICE`、デフォルト auto）の一元管理
+
+### Component 3.6: gpu_manager（GPUリソース管理）
+
+**目的**: GPU推論のOOMリトライとデバイス解決を共通化する（`gpu_manager.py`）
+
+**インターフェース**:
+```python
+def resolve_device(requested: str = "auto") -> str: ...
+def run_with_batch_retry(infer_fn: Callable[[int], T], batch_size: int) -> T: ...
+def free_gpu_memory() -> None: ...
+def is_gpu_oom_error(exc: BaseException) -> bool: ...
+```
+
+**責務**:
+- CUDA OOM検出時のバッチサイズ半減リトライ（最小1まで）
+- 最小バッチサイズでも失敗時の `GPUMemoryError` 送出
+- `"auto"` 指定時のCUDA自動検出によるデバイス解決
+- リトライ前のCUDAキャッシュ解放
+
 ### Component 4: Converter3D（2D→3D変換）
 
 **目的**: 2Dポーズデータを3Dモーションデータに変換する
@@ -210,7 +253,8 @@ class Converter3D:
 
 **責務**:
 - VideoPose3D等のモデルによる3D推定
-- 複数出力フォーマットのサポート（BVH、FBX、JSON）
+- 品質スコア算出（2D信頼度平均 × 骨長時間一貫性）と閾値未満時の警告
+- 複数出力フォーマットのサポート（BVH、FBX※簡易ASCII、JSON）
 - スケール・座標系の調整
 - ルートモーション復元（Hip中心化で失われたグローバル移動量の再注入）
 - グローバル傾き補正（単眼深度推定由来の全身傾きをロドリゲスの回転公式で補正）
@@ -622,8 +666,15 @@ for video in video_files:
 ### Error Scenario 4: 3D変換の品質低下
 
 **条件**: 2Dポーズの品質が低く、3D変換結果が不安定
-**対応**: 品質スコアを計算し、閾値以下の場合は警告
+**対応**: 品質スコア（`Motion3DData.quality_score`）を計算し、`quality_threshold` 以下の場合は警告
 **復旧**: スムージングパラメータを調整して再処理を提案
+
+### Error Scenario 5: 推論モデル未ロード（strictモード）
+
+**条件**: MMPose / VideoPose3D の重みがロードできない
+**対応**: 通常モードでは警告ログを出してスタブへフォールバック（開発・テスト用）。
+strictモード（`VME_STRICT=1` またはコンテナデフォルト）では `ModelNotAvailableError` を送出して処理を中断
+**復旧**: `[gpu]` extras のインストールと `scripts/download_weights.py` の実行を促す
 
 ## テスト戦略
 
@@ -714,8 +765,17 @@ demo.launch(server_name="0.0.0.0", server_port=7860)
 
 ### モデル重みの管理
 
-- `pretrained_h36m_cpn.bin`: Dockerイメージビルド時にCOPY
-- MMPoseモデル: `mim download` でイメージビルド時にダウンロード
+- `pretrained_h36m_cpn.bin`: Dockerイメージビルド時に `scripts/download_weights.py` でダウンロード（`DOWNLOAD_WEIGHTS=0` でスキップ可）
+- MMPoseモデル: イメージビルド時に事前ダウンロード（失敗時は初回実行時に取得）
+
+### 運用・監視
+
+- **ロギング**: `logger.configure()` でストリーム + ローテーションファイル出力（`logs/vme.log`、10MB×3世代）。
+  `VME_LOG_LEVEL` / `VME_LOG_FILE` 環境変数で制御
+- **ヘルスチェック**: FastAPI `/health` エンドポイント（CUDA可否・重み有無を返却）、
+  Docker HEALTHCHECK で監視
+- **strictモード**: コンテナは `VME_STRICT=1` をデフォルトとし、推論モデル未ロード時のサイレントフォールバックを禁止
+- **CI**: GitHub Actions（ruff lint + pytest + フロントエンドビルド）
 
 ## Web UI アーキテクチャ（要件 16）
 

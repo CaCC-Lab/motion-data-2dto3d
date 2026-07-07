@@ -79,7 +79,7 @@ async def upload_video(file: UploadFile):
         raise
     except Exception as exc:
         dest.unlink(missing_ok=True)
-        raise HTTPException(status_code=500, detail=f"Upload failed: {exc}")
+        raise HTTPException(status_code=500, detail=f"Upload failed: {exc}") from exc
 
     video_id = register_video(dest)
     return UploadResponse(video_id=video_id, filename=safe_name)
@@ -98,7 +98,7 @@ async def get_video_info(video_id: str):
         raise HTTPException(
             status_code=422,
             detail=f"Failed to read video metadata: {exc}",
-        )
+        ) from exc
 
     return VideoInfoResponse(
         video_id=video_id,
@@ -188,8 +188,8 @@ async def stream_video(video_id: str):
             media_type="video/mp4",
             filename=video_path.name,
         )
-    except FileNotFoundError:
-        raise HTTPException(status_code=404, detail="Video file not found")
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Video file not found") from exc
 
 
 @router.get("/bvh/{job_id}")
@@ -207,8 +207,8 @@ async def get_bvh_text(job_id: str):
 
     try:
         text = result_path.read_text(encoding="utf-8")
-    except FileNotFoundError:
-        raise HTTPException(status_code=404, detail="BVH file not found")
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="BVH file not found") from exc
     return {"bvh": text}
 
 

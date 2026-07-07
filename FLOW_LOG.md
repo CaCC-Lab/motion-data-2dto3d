@@ -25,6 +25,33 @@
 - 3Dスムージングベクトル化（gaussian_filter）
 - BVH再生成、比較動画作成（バッター・ピッチャー）
 
+### 2026-07-07: 本番リリース向けハードニング
+- Spec同期: tasks.md 5.2/9.1 が完了扱いなのに `gpu_manager.py`/`pipeline.py` が未存在だったため実体化
+- `pipeline.py`（MotionExtractor）を新設し、CLI/GUI/API の3重複パイプラインを集約
+- `gpu_manager.py` を新設（OOMバッチ半減リトライ・デバイス自動解決・CUDAキャッシュ解放）
+- strictモード導入（`VME_STRICT` / `--strict`、`ModelNotAvailableError`）でスタブへのサイレントフォールバックを本番で禁止
+- 品質スコア（REQ 7.2）、リソース上限配線（REQ 10.3）、max_resolution、角速度CLI統合（REQ 6）を実装
+- モデルバリデーション（models.py `__post_init__`）、ロギング設定、`/health`、Docker重みダウンロード+HEALTHCHECK
+- GitHub Actions CI（ruff + pytest + frontend build）、ruff設定追加・全lint解消
+- design.md / tasks.md を実装に同期（Phase 14.1〜14.4 完了、Phase 16 追加）
+- tests/ は無変更、全28テスト通過を維持
+
+### 2026-07-07: Phase 14.5 完了（Dockerビルド・起動テスト）
+- Dockerfile修正2件: pip/setuptools更新（PEP 660 editable対応、chumpyビルド後に実行）、numpy<2固定（torch 2.1.0/mmcv 2.1.0のNumPy 2.x非互換対応）
+- `docker build` 成功（10.3GB、VideoPose3D重み同梱、MMPose事前DL済み）
+- `docker run --gpus all` でGradio GUI起動、HTTP 200、HEALTHCHECK healthy
+- `VME_UI=web` で `/health` が cuda_available=true / weights=true を返却
+- tasks.md Phase 14 全完了 → 全タスク完了
+
+### 2026-07-07: 全体レビュー（code-reviewer subagent + 自己検証）と修正
+- 自己検証: CI相当のクリーンvenv（torch/mmpose無し）で28テスト通過、frontendビルド成功、ruff通過
+- 修正: pipeline.export/export_angular_velocity の出力パス検証をmkdir前に実施
+- P0修正: api/app.py create_app() に logger.configure() 追加（uvicorn直接マウント時のログロスト防止）
+- P1修正: 進捗コールバック例外をパイプラインで吸収（警告ログ化）、空入力時の quality_score を0.0に
+- P2修正: logger.configure() 再初期化時のハンドラ累積防止（handlers.clear）
+- 誤指摘の確認: enforce_resource_limits は存置済みで名前ズレなし、Docker numpy<2 は同一pip解決で有効（コンテナ実測1.26.4）
+- tests/test_hip_rotation.py は本セッション以前からの未追跡ファイル（Cursor作成のテスト、変更なし）
+
 ---
 
 ## 発見・詰まり

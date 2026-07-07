@@ -7,8 +7,14 @@ from typing import Dict, List, Optional
 import numpy as np
 from scipy.ndimage import gaussian_filter
 
-from video_motion_extraction import logger
+try:
+    import torch
+except ImportError:  # torchはoptional依存。未導入時はモデル未ロードとなり参照されない
+    torch = None  # type: ignore[assignment]
+
+from video_motion_extraction import gpu_manager, logger
 from video_motion_extraction.config import Converter3DConfig
+from video_motion_extraction.errors import ModelNotAvailableError
 from video_motion_extraction.joint_mapping import (
     H36M_HIERARCHY,
     H36M_JOINT_NAMES,
@@ -19,10 +25,9 @@ from video_motion_extraction.models import (
     Motion3DFrame,
     Pose2DSequence,
 )
-from video_motion_extraction.quaternion_utils import (
-    normalize_quaternions,
-    positions_to_quaternions,
-)
+from video_motion_extraction.quaternion_utils import positions_to_quaternions
+from video_motion_extraction.validators import validate_output_path
+from video_motion_extraction.videopose3d_model import load_videopose3d_model
 
 
 class Converter3D:
@@ -30,12 +35,22 @@ class Converter3D:
 
     def __init__(self, config: Optional[Converter3DConfig] = None) -> None:
         self._config = config or Converter3DConfig()
+        self._device = gpu_manager.resolve_device(self._config.device)
         self._model_available = False
         self._model = None
         self._try_load_model()
+        if self._config.strict and not self._model_available:
+            raise ModelNotAvailableError(
+                "VideoPose3D model could not be loaded in strict mode. "
+                "Run scripts/download_weights.py and verify weights_path."
+            )
         logger.step(
             "Converter3D.__init__",
-            context={"config": str(self._config), "model_available": self._model_available},
+            context={
+                "config": str(self._config),
+                "device": self._device,
+                "model_available": self._model_available,
+            },
             ai_todo=["initialize_converter"],
         )
 
@@ -50,13 +65,17 @@ class Converter3D:
 
         if weights_path is None or not Path(weights_path).exists():
             self._model_available = False
+            logger.warning(
+                "Converter3D._try_load_model",
+                context={"status": "weights_not_found", "weights_path": weights_path},
+                ai_todo=["run_download_weights_script"],
+            )
             return
 
         try:
-            from video_motion_extraction.videopose3d_model import load_videopose3d_model
             model = load_videopose3d_model(
                 weights_path=weights_path,
-                device=self._config.device,
+                device=self._device,
                 receptive_field=self._config.receptive_field,
             )
             if model is not None:
@@ -64,17 +83,17 @@ class Converter3D:
                 self._model_available = True
                 logger.step(
                     "Converter3D._try_load_model",
-                    context={"status": "loaded", "weights": weights_path},
+                    context={"status": "loaded", "weights": weights_path, "device": self._device},
                     ai_todo=[],
                 )
             else:
                 self._model_available = False
         except Exception as exc:
             self._model_available = False
-            logger.step(
+            logger.warning(
                 "Converter3D._try_load_model",
                 context={"status": "fallback_to_stub", "reason": str(exc)},
-                ai_todo=[],
+                ai_todo=["verify_weights_file"],
             )
 
     def convert_to_3d(self, pose_2d: Pose2DSequence) -> Motion3DData:
@@ -91,13 +110,65 @@ class Converter3D:
         )
 
         if self._model_available and num_joints == 17:
-            return self._convert_real(pose_2d)
-        return self._convert_stub(pose_2d)
+            motion = self._convert_real(pose_2d)
+        else:
+            motion = self._convert_stub(pose_2d)
+
+        motion.quality_score = self._compute_quality_score(pose_2d, motion)
+        if motion.quality_score < self._config.quality_threshold:
+            logger.warning(
+                "convert_to_3d.quality",
+                context={
+                    "quality_score": round(motion.quality_score, 3),
+                    "threshold": self._config.quality_threshold,
+                },
+                ai_todo=["review_input_video_quality", "adjust_smoothing_params"],
+            )
+        return motion
+
+    def _compute_quality_score(
+        self, pose_2d: Pose2DSequence, motion: Motion3DData
+    ) -> float:
+        """3D変換の品質スコアを算出（0.0〜1.0）.
+
+        2D信頼度の平均と、フレーム間の骨長一貫性（変動係数）を組み合わせる。
+        骨長が時間方向に安定しているほど3D復元の信頼性が高いとみなす。
+        """
+        # フレームが無い場合は品質評価不能として最低スコアを返す
+        if not pose_2d.frames or not motion.frames:
+            return 0.0
+
+        # 成分1: 2D信頼度の平均
+        confidences = np.concatenate([f.confidence for f in pose_2d.frames])
+        conf_score = float(np.mean(confidences)) if confidences.size > 0 else 0.0
+
+        # 成分2: 骨長の時間的一貫性
+        hierarchy = motion.joint_hierarchy
+        name_to_idx = {name: i for i, name in enumerate(motion.joint_names)}
+        consistency_score = 1.0
+        if len(motion.frames) >= 2 and hierarchy:
+            positions = np.stack([f.positions for f in motion.frames], axis=0)
+            cvs: List[float] = []
+            for child, parent in hierarchy.items():
+                ci = name_to_idx.get(child)
+                pi = name_to_idx.get(parent)
+                if ci is None or pi is None:
+                    continue
+                lengths = np.linalg.norm(
+                    positions[:, ci, :] - positions[:, pi, :], axis=1
+                )
+                mean_len = float(np.mean(lengths))
+                if mean_len > 1e-8:
+                    cvs.append(float(np.std(lengths)) / mean_len)
+            if cvs:
+                # 変動係数の平均が0なら1.0、大きいほど0に近づく
+                consistency_score = 1.0 / (1.0 + float(np.mean(cvs)) * 5.0)
+
+        score = 0.5 * conf_score + 0.5 * consistency_score
+        return float(np.clip(score, 0.0, 1.0))
 
     def _convert_real(self, pose_2d: Pose2DSequence) -> Motion3DData:
         """VideoPose3Dによる本物の2D→3D変換."""
-        import torch
-
         logger.step(
             "_convert_real",
             context={"num_frames": len(pose_2d.frames)},
@@ -138,7 +209,7 @@ class Converter3D:
         # 4. VideoPose3D推論
         t = kps_normalized.shape[0]
         input_2d = kps_normalized.reshape(1, t, 17 * 2).astype(np.float32)
-        input_tensor = torch.from_numpy(input_2d).to(self._config.device)
+        input_tensor = torch.from_numpy(input_2d).to(self._device)
 
         with torch.no_grad():
             output_3d = self._model(input_tensor)  # (1, T, 17, 3)
@@ -318,7 +389,6 @@ class Converter3D:
             ai_todo=["validate_path", "select_format", "write_file"],
         )
         # 出力パスのパストラバーサル検証
-        from video_motion_extraction.validators import validate_output_path
         validate_output_path(output_path)
 
         fmt = format.lower()
@@ -334,6 +404,7 @@ class Converter3D:
     def _export_json(self, motion_data: Motion3DData, output_path: str) -> None:
         payload = {
             "coordinate_system": "right-handed-y-up",
+            "quality_score": motion_data.quality_score,
             "fps": motion_data.fps,
             "joint_names": motion_data.joint_names,
             "joint_hierarchy": motion_data.joint_hierarchy,
@@ -555,7 +626,7 @@ class Converter3D:
             pos = frame.positions[0] if frame.positions.shape[0] > 0 else np.zeros(3)
             # X反転: BVHインポータのY-up→Z-up変換がXを反転するため補正
             values = [f"{-pos[0]:.4f}", f"{pos[1]:.4f}", f"{pos[2]:.4f}"]
-            for j in range(frame.rotations.shape[0]):
+            for _ in range(frame.rotations.shape[0]):
                 values.extend(["0.0000", "0.0000", "0.0000"])
             lines.append(" ".join(values))
 
@@ -582,6 +653,16 @@ class Converter3D:
         return np.degrees(np.array([rz, rx, ry]))
 
     def _export_fbx(self, motion_data: Motion3DData, output_path: str) -> None:
+        """簡易FBX ASCII出力.
+
+        注意: 完全なFBX SDK互換ではなくメタデータ中心の簡易形式。
+        ゲームエンジンやDCCツールへの取り込みにはBVH形式を推奨。
+        """
+        logger.warning(
+            "export.fbx",
+            context={"output_path": output_path},
+            ai_todo=["fbx_is_simplified_ascii", "prefer_bvh_for_dcc_tools"],
+        )
         lines = ["; FBX ASCII 7.4"]
         lines.append(f"; Joints: {len(motion_data.joint_names)}")
         lines.append(f"; Frames: {len(motion_data.frames)}")

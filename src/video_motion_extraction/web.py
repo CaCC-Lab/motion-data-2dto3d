@@ -11,6 +11,7 @@ def main() -> None:
 
     from video_motion_extraction.api.app import create_app
 
+    logger.configure()
     logger.step("web.main", context={}, ai_todo=["launch_fastapi"])
 
     host = os.environ.get("VME_HOST", "127.0.0.1")

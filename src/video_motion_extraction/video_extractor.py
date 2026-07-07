@@ -1,7 +1,6 @@
 """VideoExtractor: 動画フレーム抽出コンポーネント."""
 
 import math
-from pathlib import Path
 from typing import List, Optional
 
 import cv2
@@ -11,7 +10,11 @@ from video_motion_extraction import logger
 from video_motion_extraction.config import ExtractorConfig
 from video_motion_extraction.errors import VideoLoadError
 from video_motion_extraction.models import VideoMetadata
-from video_motion_extraction.validators import validate_video_format, validate_video_path
+from video_motion_extraction.validators import (
+    enforce_video_resource_limits,
+    validate_video_format,
+    validate_video_path,
+)
 
 
 class VideoExtractor:
@@ -53,6 +56,10 @@ class VideoExtractor:
 
             effective_fps = target_fps if target_fps and target_fps > 0 else video_fps
             duration = total_frames / video_fps
+
+            # リソース上限チェック（ファイルサイズ・動画長）
+            enforce_video_resource_limits(str(validated_path), duration_sec=duration)
+
             expected_frame_count = int(math.floor(duration * effective_fps))
 
             frame_interval = video_fps / effective_fps
@@ -64,7 +71,7 @@ class VideoExtractor:
                 ret, frame = cap.read()
                 if not ret:
                     break
-                frames.append(frame)
+                frames.append(self._downscale_if_needed(frame))
 
             if not frames:
                 raise VideoLoadError(f"No frames extracted from: {video_path}")
@@ -77,6 +84,20 @@ class VideoExtractor:
             return frames
         finally:
             cap.release()
+
+    def _downscale_if_needed(self, frame: np.ndarray) -> np.ndarray:
+        """長辺が max_resolution を超えるフレームをアスペクト比維持で縮小."""
+        max_res = self._config.max_resolution
+        if max_res <= 0:
+            return frame
+        h, w = frame.shape[:2]
+        long_side = max(h, w)
+        if long_side <= max_res:
+            return frame
+        scale = max_res / long_side
+        new_w = max(1, int(round(w * scale)))
+        new_h = max(1, int(round(h * scale)))
+        return cv2.resize(frame, (new_w, new_h), interpolation=cv2.INTER_AREA)
 
     def get_video_metadata(self, video_path: str) -> VideoMetadata:
         """動画のメタデータを取得."""
@@ -102,13 +123,18 @@ class VideoExtractor:
             codec = "".join(chr((fourcc_int >> 8 * i) & 0xFF) for i in range(4))
             duration = total_frames / fps if fps > 0 else 0.0
 
-            return VideoMetadata(
-                width=width,
-                height=height,
-                fps=fps,
-                total_frames=total_frames,
-                duration=duration,
-                codec=codec,
-            )
+            try:
+                return VideoMetadata(
+                    width=width,
+                    height=height,
+                    fps=fps,
+                    total_frames=total_frames,
+                    duration=duration,
+                    codec=codec,
+                )
+            except ValueError as exc:
+                raise VideoLoadError(
+                    f"Invalid video metadata for {video_path}: {exc}"
+                ) from exc
         finally:
             cap.release()

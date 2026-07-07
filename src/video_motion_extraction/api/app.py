@@ -4,11 +4,17 @@ import os
 import sys
 from pathlib import Path
 
+try:
+    import torch
+except ImportError:  # torchはoptional依存（CPU環境ではインストールされない）
+    torch = None  # type: ignore[assignment]
+
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
+from video_motion_extraction import logger
 from video_motion_extraction.api.history_db import init_db
 from video_motion_extraction.api.pipeline_runner import (
     _history_base,
@@ -32,6 +38,9 @@ def _is_relative_to(path: Path, base: Path) -> bool:
 
 def create_app() -> FastAPI:
     """FastAPIアプリケーションを作成."""
+    # uvicornで直接マウントされた場合でもログが出力されるよう初期化（冪等）
+    logger.configure()
+
     app = FastAPI(
         title="Video Motion Extraction",
         description="動画から3Dモーションデータを抽出するAPI",
@@ -57,6 +66,22 @@ def create_app() -> FastAPI:
     _history_bvh_dir.mkdir(parents=True, exist_ok=True)
     _history_thumb_dir.mkdir(parents=True, exist_ok=True)
     init_db(_history_db_path)
+
+    # ヘルスチェック（監視・ロードバランサ用）
+    @app.get("/health")
+    async def health() -> dict:
+        weights_path = (
+            Path(__file__).resolve().parent.parent
+            / "weights"
+            / "pretrained_h36m_cpn.bin"
+        )
+        cuda_available = torch.cuda.is_available() if torch is not None else False
+        return {
+            "status": "ok",
+            "version": app.version,
+            "cuda_available": cuda_available,
+            "videopose3d_weights": weights_path.exists(),
+        }
 
     # APIルーター登録
     app.include_router(router)

@@ -4,9 +4,9 @@ from typing import List, Optional
 
 import numpy as np
 
-from video_motion_extraction import logger
+from video_motion_extraction import gpu_manager, logger
 from video_motion_extraction.config import PoseModelConfig
-from video_motion_extraction.errors import GPUMemoryError
+from video_motion_extraction.errors import ModelNotAvailableError
 from video_motion_extraction.models import BoundingBox, Pose2DFrame, Pose2DSequence
 
 DEFAULT_JOINT_NAMES = [
@@ -24,13 +24,24 @@ class PoseEstimator:
 
     def __init__(self, config: Optional[PoseModelConfig] = None) -> None:
         self._config = config or PoseModelConfig()
+        self._device = gpu_manager.resolve_device(self._config.device)
         self._joint_names = list(DEFAULT_JOINT_NAMES)
         self._model_available = False
         self._inferencer = None
+        self._fps = 30.0
         self._try_load_model()
+        if self._config.strict and not self._model_available:
+            raise ModelNotAvailableError(
+                "MMPose model could not be loaded in strict mode. "
+                "Install the [gpu] extras and verify checkpoint availability."
+            )
         logger.step(
             "PoseEstimator.__init__",
-            context={"config": str(self._config), "model_available": self._model_available},
+            context={
+                "config": str(self._config),
+                "device": self._device,
+                "model_available": self._model_available,
+            },
             ai_todo=["initialize_model"],
         )
 
@@ -40,21 +51,21 @@ class PoseEstimator:
             from mmpose.apis import MMPoseInferencer
             inferencer = MMPoseInferencer(
                 pose2d=self._config.checkpoint_path or "human",
-                device=self._config.device,
+                device=self._device,
             )
             self._inferencer = inferencer
             self._model_available = True
             logger.step(
                 "PoseEstimator._try_load_model",
-                context={"status": "loaded"},
+                context={"status": "loaded", "device": self._device},
                 ai_todo=[],
             )
-        except (ImportError, Exception) as exc:
+        except Exception as exc:
             self._model_available = False
-            logger.step(
+            logger.warning(
                 "PoseEstimator._try_load_model",
                 context={"status": "fallback_to_stub", "reason": str(exc)},
-                ai_todo=[],
+                ai_todo=["install_gpu_extras_for_production"],
             )
 
     def detect_person(self, frame: np.ndarray) -> List[BoundingBox]:
@@ -71,13 +82,15 @@ class PoseEstimator:
         self,
         frames: List[np.ndarray],
         batch_size: int = 32,
+        fps: float = 30.0,
     ) -> Pose2DSequence:
         """フレームシーケンスから2Dポーズを推定."""
         logger.step(
             "estimate_2d_pose",
-            context={"num_frames": len(frames), "batch_size": batch_size},
+            context={"num_frames": len(frames), "batch_size": batch_size, "fps": fps},
             ai_todo=["detect_persons", "run_inference", "handle_gpu_retry"],
         )
+        self._fps = fps if fps > 0 else 30.0
 
         # フレーム数保存: 未検出フレームも保持し、信頼度0でマーク
         # valid_indicesは推論対象、missing_indicesは後で信頼度0で埋める
@@ -112,32 +125,14 @@ class PoseEstimator:
 
         valid_frames = [frames[i] for i in valid_indices]
 
-        current_batch_size = batch_size
-        while current_batch_size >= 1:
-            try:
-                result = self._infer_batch(valid_frames, current_batch_size)
-                # フレーム数保存: 未検出フレームを信頼度0で挿入
-                if len(result.frames) < len(frames):
-                    result = self._fill_missing_frames(
-                        result, valid_indices, len(frames)
-                    )
-                return result
-            except RuntimeError as exc:
-                if "CUDA out of memory" in str(exc):
-                    logger.warning(
-                        "estimate_2d_pose",
-                        context={"batch_size": current_batch_size, "error": str(exc)},
-                        ai_todo=["reduce_batch_size", "retry_inference"],
-                    )
-                    current_batch_size //= 2
-                    if current_batch_size < 1:
-                        raise GPUMemoryError(
-                            f"GPU OOM even at minimum batch size: {exc}"
-                        ) from exc
-                else:
-                    raise
-
-        raise GPUMemoryError("GPU memory exhausted after all retry attempts")
+        result = gpu_manager.run_with_batch_retry(
+            lambda bs: self._infer_batch(valid_frames, bs),
+            batch_size,
+        )
+        # フレーム数保存: 未検出フレームを信頼度0で挿入
+        if len(result.frames) < len(frames):
+            result = self._fill_missing_frames(result, valid_indices, len(frames))
+        return result
 
     @staticmethod
     def _fill_missing_frames(
@@ -236,17 +231,21 @@ class PoseEstimator:
         return Pose2DSequence(
             frames=pose_frames,
             joint_names=list(self._joint_names),
-            fps=30.0,
+            fps=self._fps,
         )
 
     def _infer_batch_stub(
         self, frames: List[np.ndarray], batch_size: int
     ) -> Pose2DSequence:
-        """スタブ実装によるバッチ推論（フォールバック）."""
-        logger.step(
+        """スタブ実装によるバッチ推論（フォールバック）.
+
+        MMPose未導入環境でのテスト・動作確認用。出力はランダム値であり、
+        本番利用には strict=True でモデル必須化すること。
+        """
+        logger.warning(
             "_infer_batch_stub",
             context={"num_frames": len(frames), "batch_size": batch_size},
-            ai_todo=["run_model_inference"],
+            ai_todo=["stub_output_is_random", "enable_strict_mode_for_production"],
         )
         num_joints = len(self._joint_names)
         pose_frames: List[Pose2DFrame] = []
@@ -273,5 +272,5 @@ class PoseEstimator:
         return Pose2DSequence(
             frames=pose_frames,
             joint_names=list(self._joint_names),
-            fps=30.0,
+            fps=self._fps,
         )

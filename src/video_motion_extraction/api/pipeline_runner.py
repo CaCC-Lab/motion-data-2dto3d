@@ -15,15 +15,7 @@ from video_motion_extraction import logger
 from video_motion_extraction.api.history_db import save_history
 from video_motion_extraction.api.history_schemas import HistoryEntry
 from video_motion_extraction.api.schemas import JobStatusResponse, ProcessingRequest
-from video_motion_extraction.config import (
-    Converter3DConfig,
-    ExtractorConfig,
-    PoseModelConfig,
-    ProcessingConfig,
-)
-from video_motion_extraction.converter_3d import Converter3D
-from video_motion_extraction.data_processor import DataProcessor
-from video_motion_extraction.pose_estimator import PoseEstimator
+from video_motion_extraction.pipeline import MotionExtractor, PipelineOptions
 from video_motion_extraction.video_extractor import VideoExtractor
 
 # インメモリジョブストア（単一ユーザー前提）
@@ -262,57 +254,33 @@ def _run_pipeline(
             f"Codec: {meta.codec}",
         )
 
-        # 1. フレーム抽出 (0% → 25%)
-        _update_job(job_id, current_step="extracting_frames", progress=0.05)
-        _append_log(job_id, "Extracting frames...")
-        extractor = VideoExtractor(ExtractorConfig(target_fps=req.fps))
-        frames = extractor.extract_frames(video_path, target_fps=req.fps)
-        _update_job(job_id, progress=0.25)
-        _append_log(job_id, f"  {len(frames)} frames extracted")
-
-        # 2. 2Dポーズ推定 (25% → 50%)
-        _update_job(job_id, current_step="estimating_poses", progress=0.25)
-        _append_log(job_id, "Estimating 2D poses...")
-        estimator = PoseEstimator(PoseModelConfig(batch_size=req.batch_size))
-        pose_2d = estimator.estimate_2d_pose(frames, batch_size=req.batch_size)
-        _update_job(job_id, progress=0.50)
-        _append_log(job_id, f"  {len(pose_2d.frames)} poses ({len(pose_2d.joint_names)} joints)")
-
-        # 3. データ処理 (50% → 75%)
-        _update_job(job_id, current_step="processing_data", progress=0.50)
-        _append_log(job_id, "Processing data...")
         joints_to_remove = (
             [j.strip() for j in req.remove_joints.split(",") if j.strip()]
             if req.remove_joints
             else []
         )
-        processor = DataProcessor(
-            ProcessingConfig(
-                confidence_threshold=req.threshold,
-                smoothing_window=req.smoothing,
-                joints_to_remove=joints_to_remove,
-            )
-        )
-        pose_2d = processor.interpolate_missing(pose_2d)
-        pose_2d = processor.smooth_trajectory(pose_2d, window_size=req.smoothing)
-        if joints_to_remove:
-            pose_2d = processor.remove_joints(pose_2d, joints_to_remove)
-            _append_log(job_id, f"  {len(pose_2d.joint_names)} joints remaining")
-        _update_job(job_id, progress=0.75)
-
-        # 4. 3D変換 & エクスポート (75% → 100%)
-        _update_job(job_id, current_step="converting_3d", progress=0.75)
-        _append_log(job_id, "Converting to 3D...")
-        converter = Converter3D(Converter3DConfig(
+        options = PipelineOptions(
+            fps=req.fps,
+            threshold=req.threshold,
+            smoothing=req.smoothing,
+            joints_to_remove=joints_to_remove,
+            batch_size=req.batch_size,
             bvh_mode=req.bvh_mode,
-            smooth_3d_sigma=req.smooth_3d,
+            smooth_3d=req.smooth_3d,
             root_motion_scale=req.root_motion_scale,
-        ))
-        motion_3d = converter.convert_to_3d(pose_2d)
+        )
+
+        def _on_progress(step: str, progress: float, message: str) -> None:
+            _update_job(job_id, current_step=step, progress=progress)
+            _append_log(job_id, message)
+
+        extractor = MotionExtractor(options)
+        result = extractor.process(video_path, on_progress=_on_progress)
+        motion_3d = result.motion_3d
 
         suffix = f".{req.output_format}"
         tmp = tempfile.NamedTemporaryFile(delete=False, suffix=suffix, prefix="vme_")
-        converter.export(motion_3d, tmp.name, req.output_format)
+        extractor.export(motion_3d, tmp.name, req.output_format)
         tmp.close()
 
         _update_job(
