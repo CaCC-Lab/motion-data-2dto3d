@@ -122,6 +122,29 @@ ffmpeg -y -ss 1 -t 8 -i /tmp/src.mp4 \
 
 **注意**: 代用素材でもガイド通りの演技でないと quality が 0.5 を下回ることがあります。clip_c は実写が最優先です。
 
+### 生成AIでの代用（2026-07-09 試行）
+
+カメラが使えない場合、SD 1.5 + Stable Video Diffusion で clip_c 風クリップを生成できます。
+
+```bash
+# 要: diffusers, torch(CUDA), ffmpeg。xformers 不整合時は pip uninstall xformers
+python scripts/generate_clip_c_ai.py \
+  --output data/benchmark/clips/clip_c_walk_ai.mp4
+
+python scripts/validate_benchmark_clip.py data/benchmark/clips/clip_c_walk_ai.mp4 --deep
+python scripts/benchmark_motion.py data/benchmark/clips/clip_c_walk_ai.mp4 --bvh-mode rotation
+```
+
+2026-07-09 の結果（Pexels 代用との比較）:
+
+| 指標 | clip_c (Pexels) | clip_c_ai (SD+SVD) |
+|---|---:|---:|
+| quality | 0.413 | 0.461 |
+| foot_slide | 0.981 | **0.062** |
+| jitter | 0.228 | **0.024** |
+
+生成AIは接地指標で改善する一方、quality は依然 0.5 未満。実写・高品質 T2V（Wan/CogVideo 等）の方が最終評価には向きます。
+
 ### 実写撮影（推奨）
 
 ```bash
