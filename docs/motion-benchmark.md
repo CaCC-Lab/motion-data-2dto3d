@@ -16,7 +16,13 @@
 | `clip_b` | 自作: その場で90°振り向き（5〜10秒） | 任意パス | **骨盤 yaw** の復元 |
 | `clip_c` | 自作: 歩行 or ジャンプ（5〜10秒） | 任意パス | **接地・足滑り** |
 
-`clip_b` / `clip_c` はスマホ撮影で十分です。全身が入り、30fps以上、10秒以内を推奨します。
+`clip_b` / `clip_c` はスマホ撮影で十分です。詳細は **`docs/benchmark-clips-guide.md`** を参照。
+
+一括実行:
+
+```bash
+./scripts/run_benchmark_suite.sh
+```
 
 ## 自動ベンチ（motion-data-2dto3d）
 

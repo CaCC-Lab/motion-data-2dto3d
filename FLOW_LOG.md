@@ -70,6 +70,12 @@
 - `blender_scripts/create_mixamo_test_rig.py` 追加（テスト用 Mixamo リグ生成）
 - README 更新、`data/benchmark/output/` を gitignore
 
+### 2026-07-08: ベンチ撮影ガイド + Mixamo本番リターゲット手順
+- `docs/benchmark-clips-guide.md`（clip_b/c 撮影）、`docs/mixamo-retarget-guide.md`（Mixamo FBX 手順）
+- `scripts/run_benchmark_suite.sh`、`scripts/run_mixamo_retarget_test.sh` 追加
+- `retarget_bvh_to_mixamo.py` に Unity `Character1_*` ボーン対応
+- 実測: test_clip 339frames / UnityChan FBX リターゲット成功（FBX 3.5MB）
+
 ---
 
 ## 発見・詰まり

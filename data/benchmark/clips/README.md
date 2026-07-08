@@ -6,23 +6,28 @@
 |---|---|
 | `../../input/test_clip.mp4` | 野球スイング（clip_a） |
 
-## 追加推奨（手動配置）
+## 追加クリップ（ローカル配置）
 
-以下はリポジトリに含めず、ローカルで用意してください。
+撮影手順は **`docs/benchmark-clips-guide.md`** を参照。
 
-| ID | 内容 | 目的 |
+| ID | 推奨ファイル名 | 目的 |
 |---|---|---|
-| clip_b | その場で90°振り向き（5〜10秒） | 骨盤 yaw 比較 |
-| clip_c | 歩行 or ジャンプ（5〜10秒） | 接地・足滑り比較 |
+| clip_b | `clip_b_turn_90deg.mp4` | 骨盤 yaw |
+| clip_c | `clip_c_walk.mp4` または `clip_c_jump.mp4` | 接地・足滑り |
 
-実行例:
+配置先: このディレクトリ（`data/benchmark/clips/`）
+
+## 一括ベンチ
 
 ```bash
-python scripts/benchmark_motion.py \
-  data/input/test_clip.mp4 \
-  /path/to/turn_90deg.mp4 \
-  /path/to/walk.mp4 \
-  --bvh-mode rotation
+chmod +x scripts/run_benchmark_suite.sh
+./scripts/run_benchmark_suite.sh
 ```
 
-詳細は `docs/motion-benchmark.md` を参照。
+存在しないクリップはスキップされます。
+
+## 関連
+
+- `docs/motion-benchmark.md` — ベンチ全体
+- `docs/benchmark-clips-guide.md` — 撮影ガイド
+- `data/benchmark/comparison_template.md` — 比較表テンプレート

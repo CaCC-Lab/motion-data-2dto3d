@@ -16,28 +16,28 @@ from typing import Dict, Optional
 import bpy
 from mathutils import Matrix, Quaternion, Vector
 
-# Mixamo ボーン名候補（mixamorig: プレフィックス有無両対応）
+# Mixamo ボーン名候補（mixamorig: / 無印 / Unity FBX の Character1_ ）
 MIXAMO_BONES = {
-    "hips": ("mixamorig:Hips", "Hips"),
-    "spine": ("mixamorig:Spine", "Spine"),
-    "spine1": ("mixamorig:Spine1", "Spine1"),
-    "spine2": ("mixamorig:Spine2", "Spine2"),
-    "neck": ("mixamorig:Neck", "Neck"),
-    "head": ("mixamorig:Head", "Head"),
-    "left_shoulder": ("mixamorig:LeftShoulder", "LeftShoulder"),
-    "right_shoulder": ("mixamorig:RightShoulder", "RightShoulder"),
-    "left_arm": ("mixamorig:LeftArm", "LeftArm"),
-    "right_arm": ("mixamorig:RightArm", "RightArm"),
-    "left_forearm": ("mixamorig:LeftForeArm", "LeftForeArm"),
-    "right_forearm": ("mixamorig:RightForeArm", "RightForeArm"),
-    "left_hand": ("mixamorig:LeftHand", "LeftHand"),
-    "right_hand": ("mixamorig:RightHand", "RightHand"),
-    "left_upleg": ("mixamorig:LeftUpLeg", "LeftUpLeg"),
-    "right_upleg": ("mixamorig:RightUpLeg", "RightUpLeg"),
-    "left_leg": ("mixamorig:LeftLeg", "LeftLeg"),
-    "right_leg": ("mixamorig:RightLeg", "RightLeg"),
-    "left_foot": ("mixamorig:LeftFoot", "LeftFoot"),
-    "right_foot": ("mixamorig:RightFoot", "RightFoot"),
+    "hips": ("mixamorig:Hips", "Hips", "Character1_Hips"),
+    "spine": ("mixamorig:Spine", "Spine", "Character1_Spine"),
+    "spine1": ("mixamorig:Spine1", "Spine1", "Character1_Spine1"),
+    "spine2": ("mixamorig:Spine2", "Spine2", "Character1_Spine2"),
+    "neck": ("mixamorig:Neck", "Neck", "Character1_Neck"),
+    "head": ("mixamorig:Head", "Head", "Character1_Head"),
+    "left_shoulder": ("mixamorig:LeftShoulder", "LeftShoulder", "Character1_LeftShoulder"),
+    "right_shoulder": ("mixamorig:RightShoulder", "RightShoulder", "Character1_RightShoulder"),
+    "left_arm": ("mixamorig:LeftArm", "LeftArm", "Character1_LeftArm"),
+    "right_arm": ("mixamorig:RightArm", "RightArm", "Character1_RightArm"),
+    "left_forearm": ("mixamorig:LeftForeArm", "LeftForeArm", "Character1_LeftForeArm"),
+    "right_forearm": ("mixamorig:RightForeArm", "RightForeArm", "Character1_RightForeArm"),
+    "left_hand": ("mixamorig:LeftHand", "LeftHand", "Character1_LeftHand"),
+    "right_hand": ("mixamorig:RightHand", "RightHand", "Character1_RightHand"),
+    "left_upleg": ("mixamorig:LeftUpLeg", "LeftUpLeg", "Character1_LeftUpLeg"),
+    "right_upleg": ("mixamorig:RightUpLeg", "RightUpLeg", "Character1_RightUpLeg"),
+    "left_leg": ("mixamorig:LeftLeg", "LeftLeg", "Character1_LeftLeg"),
+    "right_leg": ("mixamorig:RightLeg", "RightLeg", "Character1_RightLeg"),
+    "left_foot": ("mixamorig:LeftFoot", "LeftFoot", "Character1_LeftFoot"),
+    "right_foot": ("mixamorig:RightFoot", "RightFoot", "Character1_RightFoot"),
 }
 
 
