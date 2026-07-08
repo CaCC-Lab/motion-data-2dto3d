@@ -812,3 +812,58 @@ demo.launch(server_name="0.0.0.0", server_port=7860)
 - CORS設定（`VME_CORS_ORIGINS` 環境変数）
 - 一時ファイルTTLクリーンアップ（ジョブ: 1時間、動画: 2時間）
 - Docker ENTRYPOINT ホワイトリスト検証（gui/web のみ許可）
+
+## 骨盤回転推定（要件 17）
+
+### アルゴリズム
+
+`quaternion_utils.estimate_pelvis_rotation` は H36M 17関節の 1 フレーム位置から骨盤の向きを推定する。
+
+1. **左右軸 (X)**: `normalize(LHip - RHip)`
+2. **上方向ソース**: `Hip → Thorax`（欠損時は Spine / Neck、最終フォールバックは世界 Y 軸）
+3. **前方向 (Z)**: `cross(X, up_source)` を正規化
+4. **上軸 (Y)**: `cross(Z, X)` を正規化
+5. 直交基底 `[X, Y, Z]` から回転行列を構成し、Shepperd 法で `[w,x,y,z]` クォータニオンに変換
+
+`positions_to_quaternions` は階層に親を持たないルート関節（`Hip` 等）に対して上記推定を適用する。
+`bvh_mode=position` では BVH エクスポート時に root rotation は従来どおり 0 固定。
+
+### テスト
+
+- `tests/test_hip_rotation.py`: T-pose identity、yaw 復元、BVH rotation モードの非ゼロ root rotation、position モード互換
+
+## 統合ワークフローアーキテクチャ（要件 18）
+
+### システム構成
+
+```
+[React Integrate UI]  ←→  [Integration API :8090]  ←→  [Blender (headless)]
+        ↓                         ↓
+ [Motion API :7860]      [text2image2model :8080]
+```
+
+メイン FastAPI（`vme-web`）にも integration ルーターをマウントし、
+開発時は Vite プロキシ経由で `/api/integration` を Integration API に転送する。
+
+### コンポーネント
+
+| コンポーネント | ファイル | 役割 |
+|---|---|---|
+| Workflow | `integration/workflow.py` | 5ステップのバックグラウンドオーケストレーション |
+| Routes | `integration/routes.py` | REST + SSE エンドポイント |
+| Blender Runner | `integration/blender_runner.py` | サブプロセス実行、WSL→Windows パス変換 |
+| Rig Script | `blender_scripts/rig_glb_to_vrm.py` | GLB→VRM 自動リギング |
+| Retarget Script | `blender_scripts/retarget_bvh_to_vrm.py` | BVH→VRM リターゲティング + GLB/.blend 出力 |
+| Entry Point | `integration_web.py` | `vme-integration` 起動 |
+| VrmViewer | `frontend/src/components/VrmViewer.tsx` | Three.js + three-vrm プレビュー |
+| WorkflowPanel | `frontend/src/components/WorkflowPanel.tsx` | 統合ワークフロー操作 UI |
+
+### 環境変数
+
+| 変数 | デフォルト | 説明 |
+|---|---|---|
+| `T2I3D_API_URL` | `http://localhost:8080` | text2image2model API |
+| `VME_API_URL` | `http://localhost:7860` | motion-data-2dto3d API |
+| `BLENDER_PATH` | Windows Blender 4.3 パス | Blender 実行ファイル |
+| `INTEGRATION_PORT` | `8090` | Integration API ポート |
+| `INTEGRATION_CORS_ORIGINS` | `localhost:5173` 等 | CORS 許可オリジン |

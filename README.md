@@ -247,6 +247,43 @@ GitHub Actions（`.github/workflows/ci.yml`）で以下を実行:
 - `pytest -m "not gpu"`（Python 3.10 / 3.11）
 - フロントエンドビルド（`npm ci && npm run build`）
 
+## 統合ワークフロー（Integrate モード）
+
+テキストまたは GLB と動画から、アニメーション付きキャラクター（GLB）を生成する一連のワークフロー。
+
+### 前提
+
+- motion API（`vme-web`、ポート 7860）
+- Integration API（`vme-integration`、ポート 8090）
+- （プロンプトモード時）text2image2model API（ポート 8080）
+- Windows 側 Blender + VRM Addon（`BLENDER_PATH` で指定）
+
+### 起動
+
+```bash
+# ターミナル1: Motion API
+pip install -e ".[web,gpu]"
+vme-web
+
+# ターミナル2: Integration API
+vme-integration
+
+# ターミナル3: フロントエンド（開発）
+cd frontend && npm run dev
+```
+
+Web UI の **Integrate** タブから GLB（またはプロンプト）と動画を指定してワークフローを開始する。
+進捗は SSE でリアルタイム表示され、完了後にアニメーション GLB をプレビュー・ダウンロードできる。
+
+### 環境変数（Integration）
+
+| 変数 | デフォルト | 説明 |
+|---|---|---|
+| `T2I3D_API_URL` | `http://localhost:8080` | text2image2model API |
+| `VME_API_URL` | `http://localhost:7860` | motion API |
+| `BLENDER_PATH` | Windows Blender 4.3 | Blender 実行ファイル |
+| `INTEGRATION_PORT` | `8090` | Integration API ポート |
+
 ## Blenderでの確認方法
 
 出力されたBVHファイルをBlenderで確認する手順:
@@ -386,7 +423,13 @@ motion-data-2dto3d/
 │   ├── config.py           # 設定クラス
 │   ├── errors.py           # 例外定義
 │   ├── validators.py       # 入力検証
-│   └── logger.py           # ロギング
+│   ├── logger.py           # ロギング
+│   ├── pipeline.py         # パイプライン統合（MotionExtractor）
+│   ├── gpu_manager.py      # GPUリソース管理
+│   ├── integration/        # 統合ワークフロー API
+│   └── integration_web.py  # Integration API 起動
+├── blender_scripts/        # Blender 自動リギング・リターゲティング
+├── frontend/               # React Web UI
 ├── data/input/             # 入力動画
 ├── data/output/            # 出力ファイル (BVH/動画)
 ├── docs/                   # ドキュメント・画像

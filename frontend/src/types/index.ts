@@ -54,3 +54,22 @@ export interface HistoryItem {
 }
 
 export type AppState = 'idle' | 'uploading' | 'processing' | 'complete' | 'error'
+
+// === Integration Workflow ===
+
+export type WorkflowStep = 'idle' | 'generating_model' | 'extracting_motion' | 'rigging' | 'retargeting' | 'exporting' | 'completed' | 'failed'
+
+export interface WorkflowStatus {
+  workflow_id: string
+  status: WorkflowStep
+  progress: number
+  current_step: string
+  model_glb_url: string | null
+  vrm_path: string | null
+  bvh_path: string | null
+  animation_glb_url: string | null
+  blend_path: string | null
+  error: string | null
+}
+
+export type AppMode = 'motion' | 'integration'

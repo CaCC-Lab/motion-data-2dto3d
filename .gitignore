@@ -57,6 +57,9 @@ data/sample/*.mp4
 # Processing history (runtime DB and generated files)
 data/history/
 
+# Integration workflow runtime artifacts
+data/integration/
+
 # WSL / Windows metadata
 *:Zone.Identifier
 wsl.localhost/

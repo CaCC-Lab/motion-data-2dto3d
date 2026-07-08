@@ -23,6 +23,16 @@ from video_motion_extraction.api.pipeline_runner import (
     _history_thumb_dir,
 )
 from video_motion_extraction.api.routes import router
+from video_motion_extraction.integration.config import (
+    MODELS_DIR as _int_models_dir,
+)
+from video_motion_extraction.integration.config import (
+    MOTIONS_DIR as _int_motions_dir,
+)
+from video_motion_extraction.integration.config import (
+    OUTPUT_DIR as _int_output_dir,
+)
+from video_motion_extraction.integration.routes import router as integration_router
 
 
 def _is_relative_to(path: Path, base: Path) -> bool:
@@ -67,6 +77,11 @@ def create_app() -> FastAPI:
     _history_thumb_dir.mkdir(parents=True, exist_ok=True)
     init_db(_history_db_path)
 
+    # Integration ディレクトリ初期化
+    _int_models_dir.mkdir(parents=True, exist_ok=True)
+    _int_motions_dir.mkdir(parents=True, exist_ok=True)
+    _int_output_dir.mkdir(parents=True, exist_ok=True)
+
     # ヘルスチェック（監視・ロードバランサ用）
     @app.get("/health")
     async def health() -> dict:
@@ -85,6 +100,7 @@ def create_app() -> FastAPI:
 
     # APIルーター登録
     app.include_router(router)
+    app.include_router(integration_router)
 
     # フロントエンドの静的ファイル配信（本番用）
     frontend_dist = Path(__file__).resolve().parent.parent.parent.parent / "frontend" / "dist"

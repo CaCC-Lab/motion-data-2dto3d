@@ -295,6 +295,32 @@
     - GitHub Actions CI（ruff + pytest + フロントエンドビルド）、ruff設定
     - _Requirements: 15.1, 16.1_
 
+- [x] 17. 骨盤回転推定と統合ワークフロー
+  - [x] 17.1 骨盤回転推定
+    - `estimate_pelvis_rotation` / `_matrix_to_quaternion` を `quaternion_utils.py` に実装
+    - `positions_to_quaternions` でルート Hip に骨盤 yaw を適用
+    - `bvh_mode=rotation` で非ゼロ root rotation、`position` モードは互換維持
+    - `tests/test_hip_rotation.py`（10テスト）で検証
+    - _Requirements: 17.1, 17.2, 17.3, 17.4, 17.5_
+
+  - [x] 17.2 Integration API バックエンド
+    - `integration/` パッケージ（workflow, routes, blender_runner, schemas, config）
+    - GLBアップロード、ワークフロー開始、SSE進捗、単体 rig/retarget、ファイル配信
+    - `vme-integration` エントリポイント、メイン API へのルーターマウント
+    - WSL→Windows Blender パス変換
+    - _Requirements: 18.1, 18.2, 18.3, 18.6, 18.7_
+
+  - [x] 17.3 Blender スクリプト
+    - `blender_scripts/rig_glb_to_vrm.py`（GLB→VRM 自動リギング）
+    - `blender_scripts/retarget_bvh_to_vrm.py`（BVH→VRM リターゲティング、骨盤3軸マッピング）
+    - _Requirements: 18.2, 18.3_
+
+  - [x] 17.4 フロントエンド統合 UI
+    - Motion / Integrate モード切替、`WorkflowPanel`、`VrmViewer`（three-vrm）
+    - Integration API ヘルスチェックによる Integrate ボタン有効化
+    - Vite プロキシ（`/api/integration` → Integration API）
+    - _Requirements: 18.4, 18.5_
+
 ## 備考
 
 - `*` マーク付きのタスクはオプションであり、MVP実装時にはスキップ可能

@@ -1,13 +1,19 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react'
-import type { AppState, VideoInfo, JobStatus, ProcessingParams, HistoryItem } from './types'
+import type { AppState, AppMode, VideoInfo, JobStatus, ProcessingParams, HistoryItem, WorkflowStatus } from './types'
 import Layout from './components/Layout'
 import VideoUpload from './components/VideoUpload'
 import ParameterForm from './components/ParameterForm'
 import ProcessingLog from './components/ProcessingLog'
 import FileDownload from './components/FileDownload'
 import BvhViewer from './components/BvhViewer'
+import VrmViewer from './components/VrmViewer'
 import ProcessingHistory from './components/ProcessingHistory'
-import { uploadVideo, getVideoInfo, startProcessing, subscribeJobStatus, getBvhText, getHistoryList, deleteHistoryItem, getHistoryBvhText } from './api/client'
+import WorkflowPanel from './components/WorkflowPanel'
+import {
+  uploadVideo, getVideoInfo, startProcessing, subscribeJobStatus, getBvhText,
+  getHistoryList, deleteHistoryItem, getHistoryBvhText,
+  startWorkflow, subscribeWorkflowStatus, getIntegrationFileUrl, checkIntegrationHealth,
+} from './api/client'
 
 const DEFAULT_PARAMS: Omit<ProcessingParams, 'video_id'> = {
   fps: 30,
@@ -22,6 +28,11 @@ const DEFAULT_PARAMS: Omit<ProcessingParams, 'video_id'> = {
 }
 
 export default function App() {
+  // === Mode ===
+  const [mode, setMode] = useState<AppMode>('motion')
+  const [integrationAvailable, setIntegrationAvailable] = useState(false)
+
+  // === Motion mode state ===
   const [appState, setAppState] = useState<AppState>('idle')
   const [videoId, setVideoId] = useState<string | null>(null)
   const [videoInfo, setVideoInfo] = useState<VideoInfo | null>(null)
@@ -34,6 +45,17 @@ export default function App() {
   const [selectedHistoryId, setSelectedHistoryId] = useState<string | null>(null)
   const unsubscribeRef = useRef<(() => void) | null>(null)
 
+  // === Integration mode state ===
+  const [workflowStatus, setWorkflowStatus] = useState<WorkflowStatus | null>(null)
+  const [animationGlbUrl, setAnimationGlbUrl] = useState<string | null>(null)
+  const workflowUnsubRef = useRef<(() => void) | null>(null)
+
+  // Integration API availability check
+  useEffect(() => {
+    checkIntegrationHealth().then(setIntegrationAvailable)
+  }, [])
+
+  // === Motion mode handlers ===
   const fetchHistory = useCallback(async () => {
     try {
       const { items } = await getHistoryList()
@@ -137,7 +159,71 @@ export default function App() {
     setError(null)
   }, [])
 
-  const leftPanel = (
+  // === Integration mode handlers ===
+  const handleUploadVideoForWorkflow = useCallback(async (file: File): Promise<string> => {
+    const res = await uploadVideo(file)
+    return res.video_id
+  }, [])
+
+  const handleStartWorkflow = useCallback(async (params: {
+    prompt?: string
+    glb_file_id?: string
+    video_id?: string
+    engine_3d: string
+    mesh_quality: string
+    motion_fps: number
+  }) => {
+    try {
+      setError(null)
+      setAnimationGlbUrl(null)
+      workflowUnsubRef.current?.()
+
+      const wfId = await startWorkflow(params)
+
+      workflowUnsubRef.current = subscribeWorkflowStatus(
+        wfId,
+        (status) => {
+          setWorkflowStatus(status)
+
+          // モデル生成完了時にプレビュー表示
+          if (status.model_glb_url && !animationGlbUrl) {
+            setAnimationGlbUrl(getIntegrationFileUrl(status.model_glb_url.split('/').pop() || ''))
+          }
+
+          // アニメーション完了時
+          if (status.status === 'completed' && status.animation_glb_url) {
+            const filename = status.animation_glb_url.split('/').pop() || ''
+            setAnimationGlbUrl(getIntegrationFileUrl(filename))
+          }
+        },
+        (err) => {
+          setError(err.message)
+        },
+      )
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to start workflow')
+    }
+  }, [animationGlbUrl])
+
+  // === Render ===
+  const isWorkflowRunning = workflowStatus != null &&
+    !['completed', 'failed', 'idle'].includes(workflowStatus.status)
+
+  const currentStatus = mode === 'integration'
+    ? (isWorkflowRunning ? 'Processing...' :
+       workflowStatus?.status === 'completed' ? 'Complete' :
+       workflowStatus?.status === 'failed' ? 'Error' : 'Ready')
+    : (appState === 'idle' ? 'Ready' :
+       appState === 'uploading' ? 'Uploading...' :
+       appState === 'processing' ? 'Processing...' :
+       appState === 'complete' ? 'Complete' : 'Error')
+
+  const statusColor = currentStatus === 'Processing...' ? 'var(--accent)' :
+    currentStatus === 'Complete' ? 'var(--success)' :
+    currentStatus === 'Error' ? 'var(--error)' : 'var(--text-tertiary)'
+
+  // Left panel content
+  const motionLeftPanel = (
     <>
       <VideoUpload
         onUpload={handleUpload}
@@ -155,7 +241,7 @@ export default function App() {
         <ProcessingLog jobStatus={jobStatus} />
       )}
       {appState === 'complete' && jobId && <FileDownload jobId={jobId} />}
-      {error && (
+      {error && mode === 'motion' && (
         <div className="animate-in" style={styles.error}>
           <span style={styles.errorDot} />
           {error}
@@ -176,7 +262,45 @@ export default function App() {
     </>
   )
 
-  const rightPanel = <BvhViewer bvhText={bvhText} videoId={videoId} />
+  const integrationLeftPanel = (
+    <>
+      <WorkflowPanel
+        onStart={handleStartWorkflow}
+        workflowStatus={workflowStatus}
+        disabled={false}
+        onUploadVideo={handleUploadVideoForWorkflow}
+      />
+      {error && mode === 'integration' && (
+        <div className="animate-in" style={{ ...styles.error, marginTop: 'var(--space-lg)' }}>
+          <span style={styles.errorDot} />
+          {error}
+        </div>
+      )}
+      {workflowStatus?.status === 'completed' && workflowStatus.blend_path && (
+        <div className="animate-in" style={styles.exportInfo}>
+          <div style={styles.exportTitle}>出力ファイル</div>
+          {workflowStatus.animation_glb_url && (
+            <a
+              href={getIntegrationFileUrl(workflowStatus.animation_glb_url.split('/').pop() || '')}
+              download
+              style={styles.exportLink}
+            >
+              Animation GLB
+            </a>
+          )}
+          <div style={styles.exportPath}>
+            Blend: {workflowStatus.blend_path}
+          </div>
+        </div>
+      )}
+    </>
+  )
+
+  const leftPanel = mode === 'motion' ? motionLeftPanel : integrationLeftPanel
+
+  const rightPanel = mode === 'motion'
+    ? <BvhViewer bvhText={bvhText} videoId={videoId} />
+    : <VrmViewer glbUrl={animationGlbUrl} />
 
   return (
     <div style={styles.app}>
@@ -185,22 +309,42 @@ export default function App() {
           <div style={styles.logoMark} />
           <div>
             <h1 style={styles.title}>MOTION LAB</h1>
-            <span style={styles.subtitle}>Video Motion Extraction</span>
+            <span style={styles.subtitle}>
+              {mode === 'motion' ? 'Video Motion Extraction' : 'Text → Character Animation'}
+            </span>
           </div>
         </div>
-        <div style={styles.statusChip}>
-          <span style={{
-            ...styles.statusDot,
-            background: appState === 'processing' ? 'var(--accent)' :
-              appState === 'complete' ? 'var(--success)' :
-              appState === 'error' ? 'var(--error)' : 'var(--text-tertiary)',
-          }} />
-          <span style={styles.statusText}>
-            {appState === 'idle' ? 'Ready' :
-             appState === 'uploading' ? 'Uploading...' :
-             appState === 'processing' ? 'Processing...' :
-             appState === 'complete' ? 'Complete' : 'Error'}
-          </span>
+
+        <div style={styles.headerRight}>
+          {/* Mode toggle */}
+          <div style={styles.modeToggle}>
+            <button
+              onClick={() => setMode('motion')}
+              style={{
+                ...styles.modeBtn,
+                ...(mode === 'motion' ? styles.modeBtnActive : {}),
+              }}
+            >
+              Motion
+            </button>
+            <button
+              onClick={() => setMode('integration')}
+              disabled={!integrationAvailable}
+              style={{
+                ...styles.modeBtn,
+                ...(mode === 'integration' ? styles.modeBtnActive : {}),
+                ...(!integrationAvailable ? { opacity: 0.3, cursor: 'not-allowed' } : {}),
+              }}
+              title={integrationAvailable ? 'テキスト→キャラアニメーション' : 'Integration API未接続'}
+            >
+              Integrate
+            </button>
+          </div>
+
+          <div style={styles.statusChip}>
+            <span style={{ ...styles.statusDot, background: statusColor }} />
+            <span style={styles.statusText}>{currentStatus}</span>
+          </div>
         </div>
       </header>
       <Layout left={leftPanel} right={rightPanel} />
@@ -222,6 +366,11 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: 'center',
     justifyContent: 'space-between',
     background: 'var(--bg-surface)',
+  },
+  headerRight: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 'var(--space-md)',
   },
   logoGroup: {
     display: 'flex',
@@ -249,6 +398,28 @@ const styles: Record<string, React.CSSProperties> = {
     fontFamily: 'var(--font-mono)',
     fontWeight: 400,
     letterSpacing: '0.5px',
+  },
+  modeToggle: {
+    display: 'flex',
+    borderRadius: '8px',
+    border: '1px solid var(--border-default)',
+    overflow: 'hidden',
+  },
+  modeBtn: {
+    padding: '5px 14px',
+    fontSize: '11px',
+    fontFamily: 'var(--font-mono)',
+    fontWeight: 500,
+    color: 'var(--text-tertiary)',
+    background: 'transparent',
+    border: 'none',
+    cursor: 'pointer',
+    transition: 'all 0.15s',
+    letterSpacing: '0.5px',
+  },
+  modeBtnActive: {
+    background: 'var(--main)',
+    color: '#ffffff',
   },
   statusChip: {
     display: 'flex',
@@ -305,5 +476,36 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: 500,
     width: '100%',
     transition: 'all 0.2s',
+  },
+  exportInfo: {
+    marginTop: 'var(--space-lg)',
+    padding: 'var(--space-lg)',
+    background: 'var(--bg-root)',
+    borderRadius: 'var(--radius-lg)',
+    border: '1px solid var(--border-subtle)',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 'var(--space-sm)',
+  },
+  exportTitle: {
+    fontSize: '11px',
+    fontWeight: 600,
+    color: 'var(--text-tertiary)',
+    fontFamily: 'var(--font-mono)',
+    textTransform: 'uppercase',
+    letterSpacing: '1.5px',
+  },
+  exportLink: {
+    fontSize: '13px',
+    fontFamily: 'var(--font-ui)',
+    color: 'var(--main)',
+    fontWeight: 500,
+    textDecoration: 'none',
+  },
+  exportPath: {
+    fontSize: '10px',
+    fontFamily: 'var(--font-mono)',
+    color: 'var(--text-tertiary)',
+    wordBreak: 'break-all',
   },
 }

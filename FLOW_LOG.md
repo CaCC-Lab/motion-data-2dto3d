@@ -52,6 +52,16 @@
 - 誤指摘の確認: enforce_resource_limits は存置済みで名前ズレなし、Docker numpy<2 は同一pip解決で有効（コンテナ実測1.26.4）
 - tests/test_hip_rotation.py は本セッション以前からの未追跡ファイル（Cursor作成のテスト、変更なし）
 
+### 2026-07-08: 骨盤回転推定と統合ワークフロー（Phase 17）
+- `estimate_pelvis_rotation` を実装し、BVH rotation モードでルート Hip の yaw を復元
+- `tests/test_hip_rotation.py` 追加（10テスト、全パス）
+- Integration API（`integration/`）を新設: GLBアップロード、5ステップワークフロー、SSE進捗、Blender連携
+- Blender スクリプト2本（`rig_glb_to_vrm.py`, `retarget_bvh_to_vrm.py`）、WSL→Windows パス変換
+- フロントエンドに Motion/Integrate モード切替、`WorkflowPanel`、`VrmViewer`（three-vrm）を追加
+- `vme-integration` エントリポイント、メイン API への integration ルーターマウント
+- Spec同期（要件17/18、design/tasks Phase 17）、pyproject に httpx 追加
+- 既存28テスト + hip_rotation 10テスト = 38テスト通過、frontend ビルド成功
+
 ---
 
 ## 発見・詰まり

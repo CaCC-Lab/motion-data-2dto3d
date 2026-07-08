@@ -193,3 +193,29 @@
 4. THE Web UI SHALL 既存の Gradio GUI（`vme-gui`）および CLI（`vme`）と共存し、それらの動作を変更しない
 5. THE Docker コンテナ SHALL `VME_UI` 環境変数により `gui`（デフォルト）または `web` モードを切り替え可能とする
 6. THE FastAPI SHALL アップロードファイルのサイズ制限（500MB）、パストラバーサル防止、CORS設定、一時ファイルのTTLベースクリーンアップを実装する
+
+### 要件 17: 骨盤回転推定（BVH rotation モード）
+
+**ユーザーストーリー:** 開発者として、BVH rotation モードでルート骨盤の yaw 回転を正しく出力したい。これにより、リターゲティング先のキャラクターに自然な向きのモーションを適用できる。
+
+#### 受け入れ基準
+
+1. WHEN H36M 17関節の位置データが与えられた場合 THEN `estimate_pelvis_rotation` SHALL LHip-RHip ベクトルと Hip→Thorax/Spine ベクトルから骨盤回転クォータニオンを推定する
+2. WHEN T-pose の位置データが与えられた場合 THEN `estimate_pelvis_rotation` SHALL identity に近いクォータニオンを返す
+3. WHEN LHip/RHip が欠損している場合 THEN `estimate_pelvis_rotation` SHALL None を返し例外を発生させない
+4. WHEN `bvh_mode` が `rotation` の場合 THEN Converter_3D SHALL ルート Hip の回転チャンネルが全フレーム 0 固定にならない（yaw が存在するモーションで非ゼロ出力）
+5. WHEN `bvh_mode` が `position` の場合 THEN Converter_3D SHALL ルート回転チャンネルを従来どおり 0 固定で出力する（後方互換）
+
+### 要件 18: 統合ワークフロー（Blender/VRM連携）
+
+**ユーザーストーリー:** ユーザーとして、3Dモデル生成・自動リギング・モーション抽出・リターゲティングを一連のワークフローで実行したい。これにより、テキストまたはGLBと動画からアニメーション付きキャラクターを得られる。
+
+#### 受け入れ基準
+
+1. THE システム SHALL Integration API（`/api/integration`）を提供し、GLBアップロード、ワークフロー開始、SSE進捗、生成ファイル配信のエンドポイントを実装する
+2. THE ワークフロー SHALL 次の順序で実行する: 3Dモデル取得（text2image2model API または GLBアップロード）→ 自動リギング（GLB→VRM）→ モーション抽出（motion-data-2dto3d API）→ リターゲティング（BVH→VRM）→ GLB/.blend エクスポート
+3. THE システム SHALL Blender をヘッドレスサブプロセスで実行し、WSL から Windows 側 Blender へのパス変換をサポートする
+4. THE Web UI SHALL Motion / Integrate のモード切替を提供し、Integrate モードでワークフロー操作と VRM/GLB プレビューを可能とする
+5. WHEN Integration API が未起動の場合 THEN Web UI SHALL Integrate モードを無効化する
+6. THE システム SHALL `vme-integration` エントリポイントで Integration API を独立起動可能とする
+7. THE メイン FastAPI（`vme-web`）SHALL integration ルーターをマウントし、同一オリジンからフロントエンドが利用できる
