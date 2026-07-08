@@ -62,6 +62,7 @@ data/integration/
 
 # Benchmark reports (generated)
 data/benchmark/reports/
+data/benchmark/output/
 
 # WSL / Windows metadata
 *:Zone.Identifier

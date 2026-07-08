@@ -95,6 +95,18 @@ curl -X POST http://127.0.0.1:8090/api/integration/retarget-mixamo \
   -d '{"bvh_path": "/path/to/motion.bvh", "target_fbx_path": "/path/to/character.fbx"}'
 ```
 
+スモークテスト（テストリグ生成 → リターゲット）:
+
+```bash
+blender --background --python blender_scripts/create_mixamo_test_rig.py -- \
+  --output data/benchmark/fixtures/mixamo_test_rig.fbx
+
+blender --background --python blender_scripts/retarget_bvh_to_mixamo.py -- \
+  --bvh data/output/kitty_tshirt.bvh \
+  --target-fbx data/benchmark/fixtures/mixamo_test_rig.fbx \
+  --output-fbx data/benchmark/output/test_mixamo.fbx
+```
+
 ## 判断ガイド
 
 | 状況 | おすすめ |

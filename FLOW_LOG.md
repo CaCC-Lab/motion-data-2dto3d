@@ -66,7 +66,9 @@
 - `docs/motion-benchmark.md` と `scripts/benchmark_motion.py` を追加（品質・速度・root yaw 計測）
 - `blender_scripts/retarget_bvh_to_mixamo.py` を追加（BVH→Mixamo FBX）
 - Integration API: `POST /api/integration/retarget-mixamo` を配線
-- `data/benchmark/reports/` を gitignore、README 更新
+- Mixamo 実機スモークテスト成功（kitty_tshirt.bvh 121frames → FBX 157KB）
+- `blender_scripts/create_mixamo_test_rig.py` 追加（テスト用 Mixamo リグ生成）
+- README 更新、`data/benchmark/output/` を gitignore
 
 ---
 

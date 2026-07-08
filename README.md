@@ -304,6 +304,13 @@ blender --background --python blender_scripts/retarget_bvh_to_mixamo.py -- \
 
 Integration API: `POST /api/integration/retarget-mixamo`
 
+テスト用 Mixamo リグ（メッシュなし）の生成:
+
+```bash
+blender --background --python blender_scripts/create_mixamo_test_rig.py -- \
+  --output data/benchmark/fixtures/mixamo_test_rig.fbx
+```
+
 ## Blenderでの確認方法
 
 出力されたBVHファイルをBlenderで確認する手順:
