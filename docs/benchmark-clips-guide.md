@@ -86,6 +86,9 @@
 ## ベンチ実行
 
 ```bash
+# 事前検証（メタデータ + 任意でポーズ検出）
+python scripts/validate_benchmark_clip.py data/benchmark/clips/clip_b_turn_90deg.mp4 --deep
+
 # 一括（存在するクリップのみ実行）
 ./scripts/run_benchmark_suite.sh
 
@@ -98,6 +101,60 @@ python scripts/benchmark_motion.py \
 ```
 
 結果は `data/benchmark/reports/` に JSON で出力されます。
+
+## ストック動画での代用（実写が難しい場合）
+
+実写撮影の前にパイプラインを試す場合、Pexels 等の**全身・単色背景・1人のみ**の素材を 8秒/1080p30 にトリムして代用できます。
+
+| ID | 推奨条件 | 代用例（2026-07-09 検証） |
+|---|---|---|
+| clip_b | その場で振り向き・白背景 | Pexels #9558217（スタジオ・全身・turn around） |
+| clip_c | カメラに向かって歩行 | Pexels #5716913（全身・歩行） |
+
+```bash
+# 例: Pexels から取得（download リダイレクトを -L で追従）
+curl -fsSL -A "Mozilla/5.0" -L -o /tmp/src.mp4 \
+  "https://www.pexels.com/download/video/9558217/"
+ffmpeg -y -ss 1 -t 8 -i /tmp/src.mp4 \
+  -vf "scale=1920:1080,fps=30" -c:v libx264 -preset fast -crf 23 -an \
+  data/benchmark/clips/clip_b_turn_90deg.mp4
+```
+
+**注意**: 代用素材でもガイド通りの演技でないと quality が 0.5 を下回ることがあります。clip_c は実写が最優先です。
+
+### 生成AIでの代用（2026-07-09 試行）
+
+カメラが使えない場合、SD 1.5 + Stable Video Diffusion で clip_c 風クリップを生成できます。
+
+```bash
+# 要: diffusers, torch(CUDA), ffmpeg。xformers 不整合時は pip uninstall xformers
+python scripts/generate_clip_c_ai.py \
+  --output data/benchmark/clips/clip_c_walk_ai.mp4
+
+python scripts/validate_benchmark_clip.py data/benchmark/clips/clip_c_walk_ai.mp4 --deep
+python scripts/benchmark_motion.py data/benchmark/clips/clip_c_walk_ai.mp4 --bvh-mode rotation
+```
+
+2026-07-09 の結果（Pexels 代用との比較）:
+
+| 指標 | clip_c (Pexels) | clip_c_ai (SD+SVD) |
+|---|---:|---:|
+| quality | 0.413 | 0.461 |
+| foot_slide | 0.981 | **0.062** |
+| jitter | 0.228 | **0.024** |
+
+生成AIは接地指標で改善する一方、quality は依然 0.5 未満。実写・高品質 T2V（Wan/CogVideo 等）の方が最終評価には向きます。
+
+### 実写撮影（推奨）
+
+```bash
+# カメラ接続後（WSL は USB パススルー要）
+./scripts/capture_benchmark_clip.sh
+
+# またはスマホ撮影後
+cp your_walk.mp4 data/benchmark/clips/clip_c_walk.mp4
+python scripts/validate_benchmark_clip.py data/benchmark/clips/clip_c_walk.mp4 --deep
+```
 
 ## 比較表の記入
 
