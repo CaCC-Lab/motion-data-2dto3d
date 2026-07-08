@@ -7,16 +7,18 @@ from typing import Optional
 import click
 
 from video_motion_extraction import logger
-from video_motion_extraction.config import (
-    Converter3DConfig,
-    ExtractorConfig,
-    PoseModelConfig,
-    ProcessingConfig,
+from video_motion_extraction.config import ExtractorConfig
+from video_motion_extraction.errors import (
+    GPUMemoryError,
+    ModelNotAvailableError,
+    ValidationError,
+    VideoLoadError,
 )
-from video_motion_extraction.converter_3d import Converter3D
-from video_motion_extraction.data_processor import DataProcessor
-from video_motion_extraction.errors import GPUMemoryError, ValidationError, VideoLoadError
-from video_motion_extraction.pose_estimator import PoseEstimator
+from video_motion_extraction.pipeline import (
+    MotionExtractor,
+    PipelineOptions,
+    export_angular_velocity,
+)
 from video_motion_extraction.video_extractor import VideoExtractor
 
 FORMAT_EXTENSIONS = {".bvh": "bvh", ".fbx": "fbx", ".json": "json"}
@@ -55,6 +57,18 @@ def _detect_format(output_path: str) -> str:
 )
 @click.option("--smooth-3d", type=float, default=1.0, show_default=True, help="3Dスムージングσ (0=無効)")
 @click.option("--root-motion-scale", type=float, default=2.5, show_default=True, help="ルートモーション補正係数 (0.1〜10.0)")
+@click.option(
+    "--device", type=str, default="auto", show_default=True,
+    help="推論デバイス (auto/cpu/cuda/cuda:N)",
+)
+@click.option(
+    "--strict/--no-strict", default=None,
+    help="strictモード: 推論モデル未ロード時にエラー終了 (デフォルト: 環境変数 VME_STRICT)",
+)
+@click.option(
+    "--angular-velocity", "angular_velocity_path", type=click.Path(), default=None,
+    help="角速度データのJSON出力パス (指定時のみ算出)",
+)
 @click.option("--info", is_flag=True, default=False, help="動画メタデータのみ表示して終了")
 def main(
     video_path: str,
@@ -68,18 +82,20 @@ def main(
     bvh_mode: str,
     smooth_3d: float,
     root_motion_scale: float,
+    device: str,
+    strict: Optional[bool],
+    angular_velocity_path: Optional[str],
     info: bool,
 ) -> None:
     """動画から3Dモーションデータを抽出する.
 
     VIDEO_PATH: 入力動画ファイルのパス
     """
+    logger.configure()
     logger.step("cli.main", context={"video_path": video_path, "info": info}, ai_todo=["parse_args", "run_pipeline"])
 
-    extractor = VideoExtractor(ExtractorConfig(target_fps=fps))
-
     if info:
-        _show_info(extractor, video_path)
+        _show_info(VideoExtractor(ExtractorConfig(target_fps=fps)), video_path)
         return
 
     if output_path is None:
@@ -89,20 +105,35 @@ def main(
 
     joints_to_remove = [j.strip() for j in remove_joints.split(",") if j.strip()] if remove_joints else []
 
+    options = PipelineOptions(
+        fps=fps,
+        threshold=threshold,
+        smoothing=smoothing,
+        joints_to_remove=joints_to_remove,
+        batch_size=batch_size,
+        bvh_mode=bvh_mode,
+        smooth_3d=smooth_3d,
+        root_motion_scale=root_motion_scale,
+        compute_angular_velocity=angular_velocity_path is not None,
+        device=device,
+    )
+    if strict is not None:
+        options.strict = strict
+
     try:
-        _run_pipeline(
-            video_path=video_path,
-            output_path=output_path,
-            fmt=fmt,
-            fps=fps,
-            threshold=threshold,
-            smoothing=smoothing,
-            joints_to_remove=joints_to_remove,
-            batch_size=batch_size,
-            bvh_mode=bvh_mode,
-            smooth_3d=smooth_3d,
-            root_motion_scale=root_motion_scale,
+        extractor = MotionExtractor(options)
+        result = extractor.process(
+            video_path,
+            on_progress=lambda step, progress, message: click.echo(message),
         )
+        extractor.export(result.motion_3d, output_path, fmt)
+        click.echo(f"Exported to {output_path} ({fmt})")
+
+        if angular_velocity_path and result.angular_velocity is not None:
+            export_angular_velocity(
+                result.angular_velocity, angular_velocity_path, fps
+            )
+            click.echo(f"Angular velocity exported to {angular_velocity_path}")
     except (ValidationError, VideoLoadError, ValueError) as exc:
         logger.error("cli.main", what="Input error", why=str(exc), how="Check input file and parameters")
         click.echo(f"Error: {exc}", err=True)
@@ -111,6 +142,10 @@ def main(
         logger.error("cli.main", what="GPU memory error", why=str(exc), how="Reduce --batch-size")
         click.echo(f"GPU Error: {exc}", err=True)
         sys.exit(2)
+    except ModelNotAvailableError as exc:
+        logger.error("cli.main", what="Model not available", why=str(exc), how="Install [gpu] extras and download weights")
+        click.echo(f"Model Error: {exc}", err=True)
+        sys.exit(3)
 
 
 def _show_info(extractor: VideoExtractor, video_path: str) -> None:
@@ -127,64 +162,6 @@ def _show_info(extractor: VideoExtractor, video_path: str) -> None:
     click.echo(f"Frames:     {meta.total_frames}")
     click.echo(f"Duration:   {meta.duration:.2f}s")
     click.echo(f"Codec:      {meta.codec}")
-
-
-def _run_pipeline(
-    *,
-    video_path: str,
-    output_path: str,
-    fmt: str,
-    fps: float,
-    threshold: float,
-    smoothing: int,
-    joints_to_remove: list,
-    batch_size: int,
-    bvh_mode: str = "position",
-    smooth_3d: float = 1.0,
-    root_motion_scale: float = 2.5,
-) -> None:
-    """パイプライン実行: VideoExtractor → PoseEstimator → DataProcessor → Converter3D → export."""
-    logger.step("cli.pipeline", context={"video_path": video_path, "format": fmt}, ai_todo=["run_full_pipeline"])
-
-    # 1. フレーム抽出
-    click.echo("Extracting frames...")
-    extractor = VideoExtractor(ExtractorConfig(target_fps=fps))
-    frames = extractor.extract_frames(video_path, target_fps=fps)
-    click.echo(f"  {len(frames)} frames extracted")
-
-    # 2. 2Dポーズ推定
-    click.echo("Estimating 2D poses...")
-    estimator = PoseEstimator(PoseModelConfig(batch_size=batch_size))
-    pose_2d = estimator.estimate_2d_pose(frames, batch_size=batch_size)
-    click.echo(f"  {len(pose_2d.frames)} poses estimated ({len(pose_2d.joint_names)} joints)")
-
-    # 3. データ処理
-    click.echo("Processing data...")
-    processor = DataProcessor(
-        ProcessingConfig(
-            confidence_threshold=threshold,
-            smoothing_window=smoothing,
-            joints_to_remove=joints_to_remove,
-        )
-    )
-    pose_2d = processor.interpolate_missing(pose_2d)
-    pose_2d = processor.smooth_trajectory(pose_2d, window_size=smoothing)
-    if joints_to_remove:
-        pose_2d = processor.remove_joints(pose_2d, joints_to_remove)
-        click.echo(f"  {len(pose_2d.joint_names)} joints remaining after removal")
-
-    # 4. 3D変換 & エクスポート
-    click.echo("Converting to 3D...")
-    converter = Converter3D(Converter3DConfig(
-        bvh_mode=bvh_mode,
-        smooth_3d_sigma=smooth_3d,
-        root_motion_scale=root_motion_scale,
-    ))
-    motion_3d = converter.convert_to_3d(pose_2d)
-
-    Path(output_path).parent.mkdir(parents=True, exist_ok=True)
-    converter.export(motion_3d, output_path, fmt)
-    click.echo(f"Exported to {output_path} ({fmt})")
 
 
 if __name__ == "__main__":

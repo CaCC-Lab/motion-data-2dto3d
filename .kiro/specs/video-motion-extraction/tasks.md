@@ -191,37 +191,38 @@
     - smooth_3d_sigmaをCLIオプションとして追加（デフォルト: 1.0、0=無効）
     - _Requirements: 14.1, 14.2, 14.3, 14.4_
 
-- [ ] 14. コンテナ化とAWSデプロイ
-  - [ ] 14.1 GPU対応Dockerfileの作成
+- [x] 14. コンテナ化とAWSデプロイ
+  - [x] 14.1 GPU対応Dockerfileの作成
     - nvidia/cuda:11.8ベースイメージ
     - Python 3.10、PyTorch、MMPose、VideoPose3D依存関係のインストール
-    - モデル重み（pretrained_h36m_cpn.bin）のCOPY
-    - MMPoseモデルの事前ダウンロード（mim download）
-    - Gradio GUI起動をENTRYPOINTに設定
+    - モデル重み（pretrained_h36m_cpn.bin）のビルド時ダウンロード（scripts/download_weights.py）
+    - MMPoseモデルの事前ダウンロード
+    - Gradio GUI起動をENTRYPOINTに設定、HEALTHCHECK追加
     - _Requirements: 15.1, 15.2, 15.3_
 
-  - [ ] 14.2 Gradio GUIの外部公開対応
-    - `server_name="0.0.0.0"` の設定
+  - [x] 14.2 Gradio GUIの外部公開対応
+    - `VME_HOST` 環境変数による設定（コンテナは 0.0.0.0 デフォルト）
     - 環境変数による設定の上書き対応
     - _Requirements: 15.5_
 
-  - [ ] 14.3 docker-compose.ymlの作成
+  - [x] 14.3 docker-compose.ymlの作成
     - GPUデバイス指定（nvidia runtime）
     - ポートマッピング（7860:7860）
     - ボリュームマウント（入出力ディレクトリ）
     - _Requirements: 15.3_
 
-  - [ ] 14.4 AWSデプロイ手順ドキュメントの作成
-    - EC2 g4dn.xlarge起動手順
+  - [x] 14.4 AWSデプロイ手順ドキュメントの作成
+    - EC2 g4dn.xlarge起動手順（docs/deploy-aws.md）
     - Docker + NVIDIA Container Toolkitのセットアップ
     - セキュリティグループ設定（TCP 7860）
     - コンテナ起動・動作確認手順
     - _Requirements: 15.4_
 
-  - [ ] 14.5 ローカルDockerビルド・起動テスト
-    - `docker build` が成功する
-    - `docker run` でGradio GUIが起動する
-    - ブラウザからアクセスできる
+  - [x] 14.5 ローカルDockerビルド・起動テスト
+    - `docker build` が成功する（イメージサイズ約10.3GB、重み同梱）
+    - `docker run --gpus all` でGradio GUIが起動する（HEALTHCHECK: healthy）
+    - ブラウザからアクセスできる（GUIルート HTTP 200、`VME_UI=web` で `/health` 応答確認）
+    - コンテナ内で numpy 1.26 / torch 2.1.0+cu118 / CUDA有効 / MMPose import を確認
 
 - [x] 15. Web UI（FastAPI + React + Three.js）の実装
   - [x] 15.1 FastAPI バックエンド実装
@@ -250,6 +251,75 @@
     - Dockerfile マルチステージビルド（Node.js → Python）
     - `VME_UI` 環境変数による gui/web 切替（デフォルト: gui）
     - _Requirements: 16.1, 16.4, 16.5_
+
+- [x] 16. 本番リリース向けハードニング
+  - [x] 16.1 パイプライン統合の実体化
+    - `pipeline.py` に `MotionExtractor` / `PipelineOptions` / `PipelineResult` を実装
+    - CLI / Gradio GUI / FastAPI の3重複パイプラインを共通実装へ集約
+    - 進捗コールバックによる進捗通知の統一
+    - _Requirements: 11.1, 11.2, 11.3_
+
+  - [x] 16.2 GPUリソース管理の実体化
+    - `gpu_manager.py` にOOMリトライ（バッチ半減）・デバイス自動解決・CUDAキャッシュ解放を実装
+    - PoseEstimator / Converter3D から共通利用
+    - _Requirements: 9.1, 9.2, 9.3_
+
+  - [x] 16.3 strictモードの導入
+    - MMPose / VideoPose3D 未ロード時のサイレントスタブフォールバックを本番で禁止
+    - `ModelNotAvailableError` 追加、`VME_STRICT` 環境変数 / `--strict` CLIオプション
+    - コンテナデフォルト `VME_STRICT=1`
+    - _Requirements: 2.1, 7.1_
+
+  - [x] 16.4 品質スコアの実装
+    - `Motion3DData.quality_score`（2D信頼度平均 × 骨長時間一貫性）
+    - `quality_threshold` 未満で警告ログ、JSON出力に含める
+    - _Requirements: 7.2_
+
+  - [x] 16.5 リソース上限・解像度制限の配線
+    - `enforce_resource_limits` を `extract_frames` に配線（ファイルサイズ・動画長）
+    - `max_resolution` によるフレーム縮小を実装
+    - _Requirements: 10.3, 1.1_
+
+  - [x] 16.6 角速度のパイプライン統合
+    - `--angular-velocity` CLIオプションでJSONエクスポート
+    - `PipelineOptions.compute_angular_velocity` でオプション実行
+    - _Requirements: 6.1, 6.2, 6.3, 6.4_
+
+  - [x] 16.7 データモデルバリデーション
+    - `models.py` 各データクラスに `__post_init__` 検証（形状・範囲・整合性）
+    - _Requirements: 11.2, 2.5, 7.4_
+
+  - [x] 16.8 運用基盤
+    - ロギング設定（`logger.configure()`、ローテーションファイル出力、環境変数制御）
+    - `/health` エンドポイント（CUDA可否・重み有無）、Docker HEALTHCHECK
+    - GitHub Actions CI（ruff + pytest + フロントエンドビルド）、ruff設定
+    - _Requirements: 15.1, 16.1_
+
+- [x] 17. 骨盤回転推定と統合ワークフロー
+  - [x] 17.1 骨盤回転推定
+    - `estimate_pelvis_rotation` / `_matrix_to_quaternion` を `quaternion_utils.py` に実装
+    - `positions_to_quaternions` でルート Hip に骨盤 yaw を適用
+    - `bvh_mode=rotation` で非ゼロ root rotation、`position` モードは互換維持
+    - `tests/test_hip_rotation.py`（10テスト）で検証
+    - _Requirements: 17.1, 17.2, 17.3, 17.4, 17.5_
+
+  - [x] 17.2 Integration API バックエンド
+    - `integration/` パッケージ（workflow, routes, blender_runner, schemas, config）
+    - GLBアップロード、ワークフロー開始、SSE進捗、単体 rig/retarget、ファイル配信
+    - `vme-integration` エントリポイント、メイン API へのルーターマウント
+    - WSL→Windows Blender パス変換
+    - _Requirements: 18.1, 18.2, 18.3, 18.6, 18.7_
+
+  - [x] 17.3 Blender スクリプト
+    - `blender_scripts/rig_glb_to_vrm.py`（GLB→VRM 自動リギング）
+    - `blender_scripts/retarget_bvh_to_vrm.py`（BVH→VRM リターゲティング、骨盤3軸マッピング）
+    - _Requirements: 18.2, 18.3_
+
+  - [x] 17.4 フロントエンド統合 UI
+    - Motion / Integrate モード切替、`WorkflowPanel`、`VrmViewer`（three-vrm）
+    - Integration API ヘルスチェックによる Integrate ボタン有効化
+    - Vite プロキシ（`/api/integration` → Integration API）
+    - _Requirements: 18.4, 18.5_
 
 ## 備考
 

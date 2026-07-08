@@ -79,3 +79,9 @@ def enforce_resource_limits(
         raise ValidationError(
             f"Duration {duration_sec}s exceeds limit {MAX_DURATION_SEC}s"
         )
+
+
+def enforce_video_resource_limits(path: str, duration_sec: float = 0) -> None:
+    """動画ファイルの実サイズ・実時間に対するリソース上限チェック."""
+    file_size = os.path.getsize(path) if os.path.exists(path) else 0
+    enforce_resource_limits(file_size_bytes=file_size, duration_sec=duration_sec)

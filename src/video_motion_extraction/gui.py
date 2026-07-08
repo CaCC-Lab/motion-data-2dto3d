@@ -2,19 +2,10 @@
 
 import os
 import tempfile
-from pathlib import Path
 from typing import Optional, Tuple
 
 from video_motion_extraction import logger
-from video_motion_extraction.config import (
-    Converter3DConfig,
-    ExtractorConfig,
-    PoseModelConfig,
-    ProcessingConfig,
-)
-from video_motion_extraction.converter_3d import Converter3D
-from video_motion_extraction.data_processor import DataProcessor
-from video_motion_extraction.pose_estimator import PoseEstimator
+from video_motion_extraction.pipeline import MotionExtractor, PipelineOptions
 from video_motion_extraction.video_extractor import VideoExtractor
 
 SUPPORTED_FORMATS = ["bvh", "fbx", "json"]
@@ -62,46 +53,26 @@ def process_video(
         info = _get_video_info(video_path)
         log_lines.append(f"=== Video Info ===\n{info}\n")
 
-        # 1. フレーム抽出
-        log_lines.append("Extracting frames...")
-        extractor = VideoExtractor(ExtractorConfig(target_fps=fps))
-        frames = extractor.extract_frames(video_path, target_fps=fps)
-        log_lines.append(f"  {len(frames)} frames extracted")
-
-        # 2. 2Dポーズ推定
-        log_lines.append("Estimating 2D poses...")
-        estimator = PoseEstimator(PoseModelConfig(batch_size=batch_size))
-        pose_2d = estimator.estimate_2d_pose(frames, batch_size=batch_size)
-        log_lines.append(f"  {len(pose_2d.frames)} poses ({len(pose_2d.joint_names)} joints)")
-
-        # 3. データ処理
-        log_lines.append("Processing data...")
         joints_to_remove = [j.strip() for j in remove_joints.split(",") if j.strip()] if remove_joints else []
-        processor = DataProcessor(
-            ProcessingConfig(
-                confidence_threshold=threshold,
-                smoothing_window=smoothing,
-                joints_to_remove=joints_to_remove,
-            )
-        )
-        pose_2d = processor.interpolate_missing(pose_2d)
-        pose_2d = processor.smooth_trajectory(pose_2d, window_size=smoothing)
-        if joints_to_remove:
-            pose_2d = processor.remove_joints(pose_2d, joints_to_remove)
-            log_lines.append(f"  {len(pose_2d.joint_names)} joints remaining")
-
-        # 4. 3D変換 & エクスポート
-        log_lines.append("Converting to 3D...")
-        converter = Converter3D(Converter3DConfig(
+        options = PipelineOptions(
+            fps=fps,
+            threshold=threshold,
+            smoothing=smoothing,
+            joints_to_remove=joints_to_remove,
+            batch_size=batch_size,
             bvh_mode=bvh_mode,
-            smooth_3d_sigma=smooth_3d,
+            smooth_3d=smooth_3d,
             root_motion_scale=root_motion_scale,
-        ))
-        motion_3d = converter.convert_to_3d(pose_2d)
+        )
+        extractor = MotionExtractor(options)
+        result = extractor.process(
+            video_path,
+            on_progress=lambda step, progress, message: log_lines.append(message),
+        )
 
         suffix = f".{output_format}"
         tmp = tempfile.NamedTemporaryFile(delete=False, suffix=suffix, prefix="vme_")
-        converter.export(motion_3d, tmp.name, output_format)
+        extractor.export(result.motion_3d, tmp.name, output_format)
         tmp.close()
 
         log_lines.append(f"Done! Exported as {output_format}")
@@ -155,6 +126,7 @@ def create_ui():
 
 def main() -> None:
     """GUI起動エントリポイント."""
+    logger.configure()
     logger.step("gui.main", context={}, ai_todo=["launch_gradio"])
     demo = create_ui()
     demo.launch(

@@ -19,12 +19,14 @@ web = [
     "fastapi>=0.100",
     "uvicorn[standard]>=0.20",
     "python-multipart>=0.0.5",
+    "httpx>=0.24",
 ]
 dev = [
     "pytest",
     "hypothesis",
     "playwright",
     "pytest-playwright",
+    "ruff>=0.4",
 ]
 gpu = [
     "torch>=1.10.0",
@@ -38,9 +40,25 @@ gpu = [
 vme = "video_motion_extraction.cli:main"
 vme-gui = "video_motion_extraction.gui:main"
 vme-web = "video_motion_extraction.web:main"
+vme-integration = "video_motion_extraction.integration_web:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 110
+target-version = "py38"
+src = ["src"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B"]
+ignore = [
+    "E501",  # 長い行は段階的に解消（既存コードに多数存在）
+]
+
+[tool.ruff.lint.per-file-ignores]
+# __init__.py は再エクスポートのため未使用import許容
+"src/video_motion_extraction/__init__.py" = ["F401"]

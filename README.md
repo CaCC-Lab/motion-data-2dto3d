@@ -129,6 +129,9 @@ vme --help
 | `--smooth-3d` | 1.0 | 3Dスムージングσ (0=無効) |
 | `--root-motion-scale` | 2.5 | ルートモーション補正係数 (0.1〜10.0) |
 | `--remove-joints` | なし | 除外する関節パターン (カンマ区切り) |
+| `--device` | auto | 推論デバイス (auto/cpu/cuda/cuda:N) |
+| `--strict / --no-strict` | 環境変数 `VME_STRICT` | 推論モデル未ロード時にエラー終了 |
+| `--angular-velocity` | なし | 角速度データのJSON出力パス (指定時のみ算出) |
 | `--info` | - | 動画メタデータのみ表示 |
 
 ### Web GUI (Gradio)
@@ -141,6 +144,32 @@ vme-gui
 動画をアップロードし、各種パラメータを設定して実行。処理完了後にBVHファイルをダウンロードできる。
 
 ### Python API
+
+推奨: `MotionExtractor` によるパイプライン実行（CLI/GUI/Web APIと同一実装）。
+
+```python
+from video_motion_extraction import MotionExtractor, PipelineOptions
+
+options = PipelineOptions(
+    fps=30.0,
+    threshold=0.3,
+    smoothing=5,
+    bvh_mode="position",
+    smooth_3d=1.0,
+    root_motion_scale=2.5,
+    compute_angular_velocity=True,  # 角速度も算出する場合
+    strict=True,                    # 本番: モデル未ロード時にエラー
+    device="auto",                  # CUDA自動検出
+)
+
+extractor = MotionExtractor(options)
+result = extractor.process("input.mp4")
+
+print(f"quality score: {result.quality_score}")
+extractor.export(result.motion_3d, "output.bvh", "bvh")
+```
+
+各コンポーネントを個別に使うことも可能:
 
 ```python
 from video_motion_extraction import (
@@ -158,7 +187,7 @@ frames = extractor.extract_frames("input.mp4", target_fps=30.0)
 
 # 2. 2Dポーズ推定
 estimator = PoseEstimator()
-pose_2d = estimator.estimate_2d_pose(frames)
+pose_2d = estimator.estimate_2d_pose(frames, fps=30.0)
 
 # 3. データ補完・加工
 processor = DataProcessor(ProcessingConfig(
@@ -177,6 +206,83 @@ converter = Converter3D(Converter3DConfig(
 motion_3d = converter.convert_to_3d(pose_2d)
 converter.export(motion_3d, "output.bvh", "bvh")
 ```
+
+## 本番運用
+
+### 環境変数
+
+| 変数 | デフォルト | 説明 |
+|---|---|---|
+| `VME_STRICT` | (ローカル: 無効 / Docker: `1`) | 推論モデル未ロード時に `ModelNotAvailableError` で中断。スタブへのサイレントフォールバックを禁止 |
+| `VME_DEVICE` | `auto` | 推論デバイス。`auto` はCUDA自動検出 |
+| `VME_LOG_LEVEL` | `INFO` | ログレベル |
+| `VME_LOG_FILE` | `logs/vme.log` | ローテーションログ出力先（空文字で無効、10MB×3世代） |
+| `VME_HOST` / `VME_PORT` | `127.0.0.1` / `7860` | GUI/Web のバインド先 |
+| `VME_UI` | `gui` | コンテナ起動モード（`gui` / `web`） |
+| `VME_CORS_ORIGINS` | localhost:5173 | Web APIのCORS許可オリジン |
+
+### ヘルスチェック
+
+Web UIモード（`VME_UI=web`）では `/health` エンドポイントが利用できる。
+
+```bash
+curl http://localhost:7860/health
+# {"status": "ok", "version": "0.1.0", "cuda_available": true, "videopose3d_weights": true}
+```
+
+DockerイメージにはHEALTHCHECKが組み込まれており、`docker ps` で状態を確認できる。
+
+### 注意事項
+
+- **FBXエクスポートは簡易ASCII形式**であり、DCCツール取り込みにはBVHを推奨
+- モデル重みは `python scripts/download_weights.py` で取得（Dockerビルド時は自動実行、`--build-arg DOWNLOAD_WEIGHTS=0` でスキップ）
+- Web APIのジョブ管理はインメモリ（単一プロセス前提）。マルチインスタンス構成にする場合は外部ジョブストアの導入が必要
+- 公開運用時はリバースプロキシ等での認証・TLS終端を推奨（アプリ自体に認証機能はない）
+
+### CI
+
+GitHub Actions（`.github/workflows/ci.yml`）で以下を実行:
+
+- `ruff check src/`（lint）
+- `pytest -m "not gpu"`（Python 3.10 / 3.11）
+- フロントエンドビルド（`npm ci && npm run build`）
+
+## 統合ワークフロー（Integrate モード）
+
+テキストまたは GLB と動画から、アニメーション付きキャラクター（GLB）を生成する一連のワークフロー。
+
+### 前提
+
+- motion API（`vme-web`、ポート 7860）
+- Integration API（`vme-integration`、ポート 8090）
+- （プロンプトモード時）text2image2model API（ポート 8080）
+- Windows 側 Blender + VRM Addon（`BLENDER_PATH` で指定）
+
+### 起動
+
+```bash
+# ターミナル1: Motion API
+pip install -e ".[web,gpu]"
+vme-web
+
+# ターミナル2: Integration API
+vme-integration
+
+# ターミナル3: フロントエンド（開発）
+cd frontend && npm run dev
+```
+
+Web UI の **Integrate** タブから GLB（またはプロンプト）と動画を指定してワークフローを開始する。
+進捗は SSE でリアルタイム表示され、完了後にアニメーション GLB をプレビュー・ダウンロードできる。
+
+### 環境変数（Integration）
+
+| 変数 | デフォルト | 説明 |
+|---|---|---|
+| `T2I3D_API_URL` | `http://localhost:8080` | text2image2model API |
+| `VME_API_URL` | `http://localhost:7860` | motion API |
+| `BLENDER_PATH` | Windows Blender 4.3 | Blender 実行ファイル |
+| `INTEGRATION_PORT` | `8090` | Integration API ポート |
 
 ## Blenderでの確認方法
 
@@ -317,7 +423,13 @@ motion-data-2dto3d/
 │   ├── config.py           # 設定クラス
 │   ├── errors.py           # 例外定義
 │   ├── validators.py       # 入力検証
-│   └── logger.py           # ロギング
+│   ├── logger.py           # ロギング
+│   ├── pipeline.py         # パイプライン統合（MotionExtractor）
+│   ├── gpu_manager.py      # GPUリソース管理
+│   ├── integration/        # 統合ワークフロー API
+│   └── integration_web.py  # Integration API 起動
+├── blender_scripts/        # Blender 自動リギング・リターゲティング
+├── frontend/               # React Web UI
 ├── data/input/             # 入力動画
 ├── data/output/            # 出力ファイル (BVH/動画)
 ├── docs/                   # ドキュメント・画像

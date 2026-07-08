@@ -11,3 +11,7 @@ class GPUMemoryError(Exception):
 
 class ValidationError(Exception):
     """入力検証エラー."""
+
+
+class ModelNotAvailableError(Exception):
+    """推論モデルが利用できないエラー（strictモード時に送出）."""

@@ -177,6 +177,49 @@ class DataProcessor:
 - 角速度・加速度の算出
 - ノイズ除去とスムージング
 
+### Component 3.5: MotionExtractor（メインパイプライン）
+
+**目的**: 全コンポーネントを結合した単一のパイプライン実装を提供し、CLI / Gradio GUI / FastAPI から共通利用する
+
+**インターフェース**:
+```python
+class MotionExtractor:
+    def __init__(self, options: Optional[PipelineOptions] = None) -> None: ...
+
+    def process(
+        self,
+        video_path: str,
+        on_progress: Optional[ProgressCallback] = None,
+    ) -> PipelineResult:
+        """VideoExtractor → PoseEstimator → DataProcessor → Converter3D を順に実行"""
+
+    def export(self, motion_data: Motion3DData, output_path: str, output_format: str) -> None: ...
+```
+
+**責務**:
+- パイプライン全体のオーケストレーション（`pipeline.py`）
+- 進捗コールバックによるCLI/GUI/APIへの進捗通知
+- 角速度算出のオプション実行（`PipelineOptions.compute_angular_velocity`）
+- strictモード（`VME_STRICT` 環境変数 / オプション）とデバイス選択（`VME_DEVICE`、デフォルト auto）の一元管理
+
+### Component 3.6: gpu_manager（GPUリソース管理）
+
+**目的**: GPU推論のOOMリトライとデバイス解決を共通化する（`gpu_manager.py`）
+
+**インターフェース**:
+```python
+def resolve_device(requested: str = "auto") -> str: ...
+def run_with_batch_retry(infer_fn: Callable[[int], T], batch_size: int) -> T: ...
+def free_gpu_memory() -> None: ...
+def is_gpu_oom_error(exc: BaseException) -> bool: ...
+```
+
+**責務**:
+- CUDA OOM検出時のバッチサイズ半減リトライ（最小1まで）
+- 最小バッチサイズでも失敗時の `GPUMemoryError` 送出
+- `"auto"` 指定時のCUDA自動検出によるデバイス解決
+- リトライ前のCUDAキャッシュ解放
+
 ### Component 4: Converter3D（2D→3D変換）
 
 **目的**: 2Dポーズデータを3Dモーションデータに変換する
@@ -210,7 +253,8 @@ class Converter3D:
 
 **責務**:
 - VideoPose3D等のモデルによる3D推定
-- 複数出力フォーマットのサポート（BVH、FBX、JSON）
+- 品質スコア算出（2D信頼度平均 × 骨長時間一貫性）と閾値未満時の警告
+- 複数出力フォーマットのサポート（BVH、FBX※簡易ASCII、JSON）
 - スケール・座標系の調整
 - ルートモーション復元（Hip中心化で失われたグローバル移動量の再注入）
 - グローバル傾き補正（単眼深度推定由来の全身傾きをロドリゲスの回転公式で補正）
@@ -622,8 +666,15 @@ for video in video_files:
 ### Error Scenario 4: 3D変換の品質低下
 
 **条件**: 2Dポーズの品質が低く、3D変換結果が不安定
-**対応**: 品質スコアを計算し、閾値以下の場合は警告
+**対応**: 品質スコア（`Motion3DData.quality_score`）を計算し、`quality_threshold` 以下の場合は警告
 **復旧**: スムージングパラメータを調整して再処理を提案
+
+### Error Scenario 5: 推論モデル未ロード（strictモード）
+
+**条件**: MMPose / VideoPose3D の重みがロードできない
+**対応**: 通常モードでは警告ログを出してスタブへフォールバック（開発・テスト用）。
+strictモード（`VME_STRICT=1` またはコンテナデフォルト）では `ModelNotAvailableError` を送出して処理を中断
+**復旧**: `[gpu]` extras のインストールと `scripts/download_weights.py` の実行を促す
 
 ## テスト戦略
 
@@ -714,8 +765,17 @@ demo.launch(server_name="0.0.0.0", server_port=7860)
 
 ### モデル重みの管理
 
-- `pretrained_h36m_cpn.bin`: Dockerイメージビルド時にCOPY
-- MMPoseモデル: `mim download` でイメージビルド時にダウンロード
+- `pretrained_h36m_cpn.bin`: Dockerイメージビルド時に `scripts/download_weights.py` でダウンロード（`DOWNLOAD_WEIGHTS=0` でスキップ可）
+- MMPoseモデル: イメージビルド時に事前ダウンロード（失敗時は初回実行時に取得）
+
+### 運用・監視
+
+- **ロギング**: `logger.configure()` でストリーム + ローテーションファイル出力（`logs/vme.log`、10MB×3世代）。
+  `VME_LOG_LEVEL` / `VME_LOG_FILE` 環境変数で制御
+- **ヘルスチェック**: FastAPI `/health` エンドポイント（CUDA可否・重み有無を返却）、
+  Docker HEALTHCHECK で監視
+- **strictモード**: コンテナは `VME_STRICT=1` をデフォルトとし、推論モデル未ロード時のサイレントフォールバックを禁止
+- **CI**: GitHub Actions（ruff lint + pytest + フロントエンドビルド）
 
 ## Web UI アーキテクチャ（要件 16）
 
@@ -752,3 +812,58 @@ demo.launch(server_name="0.0.0.0", server_port=7860)
 - CORS設定（`VME_CORS_ORIGINS` 環境変数）
 - 一時ファイルTTLクリーンアップ（ジョブ: 1時間、動画: 2時間）
 - Docker ENTRYPOINT ホワイトリスト検証（gui/web のみ許可）
+
+## 骨盤回転推定（要件 17）
+
+### アルゴリズム
+
+`quaternion_utils.estimate_pelvis_rotation` は H36M 17関節の 1 フレーム位置から骨盤の向きを推定する。
+
+1. **左右軸 (X)**: `normalize(LHip - RHip)`
+2. **上方向ソース**: `Hip → Thorax`（欠損時は Spine / Neck、最終フォールバックは世界 Y 軸）
+3. **前方向 (Z)**: `cross(X, up_source)` を正規化
+4. **上軸 (Y)**: `cross(Z, X)` を正規化
+5. 直交基底 `[X, Y, Z]` から回転行列を構成し、Shepperd 法で `[w,x,y,z]` クォータニオンに変換
+
+`positions_to_quaternions` は階層に親を持たないルート関節（`Hip` 等）に対して上記推定を適用する。
+`bvh_mode=position` では BVH エクスポート時に root rotation は従来どおり 0 固定。
+
+### テスト
+
+- `tests/test_hip_rotation.py`: T-pose identity、yaw 復元、BVH rotation モードの非ゼロ root rotation、position モード互換
+
+## 統合ワークフローアーキテクチャ（要件 18）
+
+### システム構成
+
+```
+[React Integrate UI]  ←→  [Integration API :8090]  ←→  [Blender (headless)]
+        ↓                         ↓
+ [Motion API :7860]      [text2image2model :8080]
+```
+
+メイン FastAPI（`vme-web`）にも integration ルーターをマウントし、
+開発時は Vite プロキシ経由で `/api/integration` を Integration API に転送する。
+
+### コンポーネント
+
+| コンポーネント | ファイル | 役割 |
+|---|---|---|
+| Workflow | `integration/workflow.py` | 5ステップのバックグラウンドオーケストレーション |
+| Routes | `integration/routes.py` | REST + SSE エンドポイント |
+| Blender Runner | `integration/blender_runner.py` | サブプロセス実行、WSL→Windows パス変換 |
+| Rig Script | `blender_scripts/rig_glb_to_vrm.py` | GLB→VRM 自動リギング |
+| Retarget Script | `blender_scripts/retarget_bvh_to_vrm.py` | BVH→VRM リターゲティング + GLB/.blend 出力 |
+| Entry Point | `integration_web.py` | `vme-integration` 起動 |
+| VrmViewer | `frontend/src/components/VrmViewer.tsx` | Three.js + three-vrm プレビュー |
+| WorkflowPanel | `frontend/src/components/WorkflowPanel.tsx` | 統合ワークフロー操作 UI |
+
+### 環境変数
+
+| 変数 | デフォルト | 説明 |
+|---|---|---|
+| `T2I3D_API_URL` | `http://localhost:8080` | text2image2model API |
+| `VME_API_URL` | `http://localhost:7860` | motion-data-2dto3d API |
+| `BLENDER_PATH` | Windows Blender 4.3 パス | Blender 実行ファイル |
+| `INTEGRATION_PORT` | `8090` | Integration API ポート |
+| `INTEGRATION_CORS_ORIGINS` | `localhost:5173` 等 | CORS 許可オリジン |

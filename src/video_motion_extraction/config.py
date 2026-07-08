@@ -14,8 +14,9 @@ class ExtractorConfig:
 class PoseModelConfig:
     model_name: str = "mmpose_hrnet"
     batch_size: int = 32
-    device: str = "cpu"
+    device: str = "auto"                # "auto" / "cpu" / "cuda" / "cuda:N"
     checkpoint_path: Optional[str] = None
+    strict: bool = False                # True: モデル未ロード時にエラー（本番推奨）
 
 
 @dataclass
@@ -29,8 +30,9 @@ class ProcessingConfig:
 @dataclass
 class Converter3DConfig:
     model_name: str = "videopose3d"
-    device: str = "cpu"
+    device: str = "auto"                # "auto" / "cpu" / "cuda" / "cuda:N"
     quality_threshold: float = 0.5
+    strict: bool = False                # True: モデル未ロード時にエラー（本番推奨）
     weights_path: Optional[str] = None
     receptive_field: int = 243
     bvh_mode: str = "position"          # "position" or "rotation"
