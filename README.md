@@ -284,6 +284,33 @@ Web UI の **Integrate** タブから GLB（またはプロンプト）と動画
 | `BLENDER_PATH` | Windows Blender 4.3 | Blender 実行ファイル |
 | `INTEGRATION_PORT` | `8090` | Integration API ポート |
 
+### モーションベンチマーク
+
+複数パイプライン（本ツール / ComfyUI-Video2MotionCapture 等）の比較手順:
+
+```bash
+python scripts/benchmark_motion.py data/input/test_clip.mp4 --bvh-mode rotation
+```
+
+詳細は `docs/motion-benchmark.md` を参照。
+
+### BVH → Mixamo リターゲット
+
+```bash
+blender --background --python blender_scripts/retarget_bvh_to_mixamo.py -- \
+  --bvh motion.bvh --target-fbx mixamo_character.fbx \
+  --output-fbx animation.fbx
+```
+
+Integration API: `POST /api/integration/retarget-mixamo`
+
+テスト用 Mixamo リグ（メッシュなし）の生成:
+
+```bash
+blender --background --python blender_scripts/create_mixamo_test_rig.py -- \
+  --output data/benchmark/fixtures/mixamo_test_rig.fbx
+```
+
 ## Blenderでの確認方法
 
 出力されたBVHファイルをBlenderで確認する手順:

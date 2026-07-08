@@ -160,3 +160,39 @@ def retarget_bvh_to_vrm(
         raise RuntimeError("No output files generated")
 
     return outputs
+
+
+def retarget_bvh_to_mixamo(
+    bvh_path: str,
+    target_fbx_path: str,
+    output_fbx: Optional[str] = None,
+    output_blend: Optional[str] = None,
+    timeout: int = 600,
+) -> Dict[str, str]:
+    """BVH→Mixamo FBXリターゲティング + エクスポート.
+
+    Returns:
+        {"fbx": path, "blend": path} の辞書（出力されたもののみ）
+    """
+    args = ["--bvh", bvh_path, "--target-fbx", target_fbx_path]
+    if output_fbx:
+        args.extend(["--output-fbx", output_fbx])
+    if output_blend:
+        args.extend(["--output-blend", output_blend])
+
+    _run_blender_script(
+        "retarget_bvh_to_mixamo.py",
+        args,
+        timeout=timeout,
+    )
+
+    outputs: Dict[str, str] = {}
+    if output_fbx and Path(output_fbx).exists():
+        outputs["fbx"] = output_fbx
+    if output_blend and Path(output_blend).exists():
+        outputs["blend"] = output_blend
+
+    if not outputs:
+        raise RuntimeError("No output files generated")
+
+    return outputs

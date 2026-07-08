@@ -60,6 +60,10 @@ data/history/
 # Integration workflow runtime artifacts
 data/integration/
 
+# Benchmark reports (generated)
+data/benchmark/reports/
+data/benchmark/output/
+
 # WSL / Windows metadata
 *:Zone.Identifier
 wsl.localhost/
