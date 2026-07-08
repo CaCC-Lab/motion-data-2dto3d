@@ -10,11 +10,13 @@ from fastapi import APIRouter, HTTPException, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
 
 from video_motion_extraction.integration.blender_runner import (
+    retarget_bvh_to_mixamo,
     retarget_bvh_to_vrm,
     rig_glb_to_vrm,
 )
 from video_motion_extraction.integration.config import MODELS_DIR, MOTIONS_DIR, OUTPUT_DIR
 from video_motion_extraction.integration.schemas import (
+    RetargetMixamoRequest,
     RetargetRequest,
     RigRequest,
     WorkflowRequest,
@@ -154,6 +156,37 @@ async def retarget_motion(request: RetargetRequest):
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
+@router.post("/retarget-mixamo")
+async def retarget_motion_mixamo(request: RetargetMixamoRequest):
+    """BVH→Mixamo FBXリターゲティング（単体実行）."""
+    bvh_path = Path(request.bvh_path)
+    target_fbx = Path(request.target_fbx_path)
+
+    if not bvh_path.exists():
+        raise HTTPException(status_code=404, detail="BVH file not found")
+    if not target_fbx.exists():
+        raise HTTPException(status_code=404, detail="Mixamo FBX file not found")
+
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    stem = f"{bvh_path.stem}_{target_fbx.stem}"
+    output_fbx = str(OUTPUT_DIR / f"{stem}_mixamo.fbx")
+    output_blend = str(OUTPUT_DIR / f"{stem}_mixamo.blend")
+
+    try:
+        outputs = retarget_bvh_to_mixamo(
+            bvh_path=str(bvh_path),
+            target_fbx_path=str(target_fbx),
+            output_fbx=output_fbx,
+            output_blend=output_blend,
+        )
+        return {
+            "animation_fbx": outputs.get("fbx"),
+            "blend_file": outputs.get("blend"),
+        }
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
 @router.get("/files/{filename}")
 async def serve_file(filename: str):
     """生成ファイルの配信."""
@@ -177,6 +210,8 @@ async def serve_file(filename: str):
                 media_type = "application/x-blender"
             elif suffix == ".bvh":
                 media_type = "text/plain"
+            elif suffix == ".fbx":
+                media_type = "application/octet-stream"
 
             return FileResponse(str(file_path), media_type=media_type, filename=filename)
 

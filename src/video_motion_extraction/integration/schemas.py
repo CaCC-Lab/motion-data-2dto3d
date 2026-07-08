@@ -44,6 +44,13 @@ class RetargetRequest(BaseModel):
     vrm_path: str
 
 
+class RetargetMixamoRequest(BaseModel):
+    """BVH→Mixamo FBXリターゲティングリクエスト."""
+
+    bvh_path: str
+    target_fbx_path: str
+
+
 class ExportRequest(BaseModel):
     """アニメーション出力リクエスト."""
 
