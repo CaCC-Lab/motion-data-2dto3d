@@ -286,13 +286,21 @@ Web UI の **Integrate** タブから GLB（またはプロンプト）と動画
 
 ### モーションベンチマーク
 
-複数パイプライン（本ツール / ComfyUI-Video2MotionCapture 等）の比較手順:
-
 ```bash
-python scripts/benchmark_motion.py data/input/test_clip.mp4 --bvh-mode rotation
+./scripts/run_benchmark_suite.sh
 ```
 
-詳細は `docs/motion-benchmark.md` を参照。
+- 撮影ガイド: `docs/benchmark-clips-guide.md`
+- 比較手順: `docs/motion-benchmark.md`
+- 比較表: `data/benchmark/comparison_template.md`
+
+### Mixamo リターゲット
+
+```bash
+./scripts/run_mixamo_retarget_test.sh ~/Downloads/YBot.fbx data/output/motion.bvh
+```
+
+手順書: `docs/mixamo-retarget-guide.md`
 
 ### BVH → Mixamo リターゲット
 
