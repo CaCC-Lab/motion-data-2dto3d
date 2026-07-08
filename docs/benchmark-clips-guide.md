@@ -120,7 +120,18 @@ ffmpeg -y -ss 1 -t 8 -i /tmp/src.mp4 \
   data/benchmark/clips/clip_b_turn_90deg.mp4
 ```
 
-**注意**: 代用素材でもガイド通りの演技でないと quality が 0.5 を下回ることがあります。本番比較は実写撮影を推奨します。
+**注意**: 代用素材でもガイド通りの演技でないと quality が 0.5 を下回ることがあります。clip_c は実写が最優先です。
+
+### 実写撮影（推奨）
+
+```bash
+# カメラ接続後（WSL は USB パススルー要）
+./scripts/capture_benchmark_clip.sh
+
+# またはスマホ撮影後
+cp your_walk.mp4 data/benchmark/clips/clip_c_walk.mp4
+python scripts/validate_benchmark_clip.py data/benchmark/clips/clip_c_walk.mp4 --deep
+```
 
 ## 比較表の記入
 
