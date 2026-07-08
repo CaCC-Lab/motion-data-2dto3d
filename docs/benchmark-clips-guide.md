@@ -86,6 +86,9 @@
 ## ベンチ実行
 
 ```bash
+# 事前検証（メタデータ + 任意でポーズ検出）
+python scripts/validate_benchmark_clip.py data/benchmark/clips/clip_b_turn_90deg.mp4 --deep
+
 # 一括（存在するクリップのみ実行）
 ./scripts/run_benchmark_suite.sh
 
@@ -98,6 +101,26 @@ python scripts/benchmark_motion.py \
 ```
 
 結果は `data/benchmark/reports/` に JSON で出力されます。
+
+## ストック動画での代用（実写が難しい場合）
+
+実写撮影の前にパイプラインを試す場合、Pexels 等の**全身・単色背景・1人のみ**の素材を 8秒/1080p30 にトリムして代用できます。
+
+| ID | 推奨条件 | 代用例（2026-07-09 検証） |
+|---|---|---|
+| clip_b | その場で振り向き・白背景 | Pexels #9558217（スタジオ・全身・turn around） |
+| clip_c | カメラに向かって歩行 | Pexels #5716913（全身・歩行） |
+
+```bash
+# 例: Pexels から取得（download リダイレクトを -L で追従）
+curl -fsSL -A "Mozilla/5.0" -L -o /tmp/src.mp4 \
+  "https://www.pexels.com/download/video/9558217/"
+ffmpeg -y -ss 1 -t 8 -i /tmp/src.mp4 \
+  -vf "scale=1920:1080,fps=30" -c:v libx264 -preset fast -crf 23 -an \
+  data/benchmark/clips/clip_b_turn_90deg.mp4
+```
+
+**注意**: 代用素材でもガイド通りの演技でないと quality が 0.5 を下回ることがあります。本番比較は実写撮影を推奨します。
 
 ## 比較表の記入
 

@@ -21,7 +21,16 @@
 一括実行:
 
 ```bash
+# 事前検証
+python scripts/validate_benchmark_clip.py data/benchmark/clips/*.mp4 --deep
+
 ./scripts/run_benchmark_suite.sh
+```
+
+ComfyUI 比較のセットアップ:
+
+```bash
+./scripts/setup_comfyui_v2mc.sh
 ```
 
 ## 自動ベンチ（motion-data-2dto3d）
