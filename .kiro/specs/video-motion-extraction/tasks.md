@@ -321,6 +321,19 @@
     - Vite プロキシ（`/api/integration` → Integration API）
     - _Requirements: 18.4, 18.5_
 
+- [x] 18. 座標系の右手系化（鏡像・180°反転の修正）
+  - [x] 18.1 Spec 修正（要件 8.3〜8.5、12.4 の文言、design 座標系規約）
+  - [x] 18.2 テスト追加（Cursor）
+    - `camera_to_world` が行列式 +1 の回転であること、`(x, y, z) → (x, -y, -z)` であること
+    - カメラ座標で正対する人物（鼻が -Z 側）が、世界座標で前方 +Z・左 +X になり、左右の関節から出した前方向と鼻の向きが一致すること
+    - BVH position / rotation（ルート位置・OFFSET）/ flat の出力値が世界座標と符号まで一致すること（X 反転なし）
+    - _Requirements: 8.3, 8.4, 8.5_
+  - [x] 18.3 実装（Claude Code）
+    - `camera_to_world` を追加し `_convert_real` の Y 軸反転を置き換える
+    - `_export_bvh_position` / `_export_bvh_hierarchical` / `_export_bvh_flat` の X 反転を削除
+    - `frontend/src/components/VrmViewer.tsx`: VRM 拡張なしのアニメーション GLB に掛けていた 180°回転（旧データの反転を打ち消していた）を削除
+    - _Requirements: 8.3, 8.4, 8.5, 12.4_
+
 ## 備考
 
 - `*` マーク付きのタスクはオプションであり、MVP実装時にはスキップ可能

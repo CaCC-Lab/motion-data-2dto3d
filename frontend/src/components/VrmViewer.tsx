@@ -2,7 +2,7 @@ import React, { useRef, useEffect, useState } from 'react'
 import * as THREE from 'three'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
-import { VRMLoaderPlugin } from '@pixiv/three-vrm'
+import { VRMLoaderPlugin, VRMUtils } from '@pixiv/three-vrm'
 
 interface Props {
   glbUrl: string | null
@@ -143,12 +143,13 @@ export default function VrmViewer({ glbUrl }: Props) {
         scene.add(model)
         modelRef.current = model
 
-        // VRM/GLBモデルの向き補正（VRM由来モデルは-Z方向を向くため180°回転）
+        // 向き補正: VRM 0.x は -Z を向くので rotateVRM0 で 180°回転する（VRM 1.0 は +Z 向きなので回さない）。
+        // retarget_bvh_to_vrm.py が書き出すアニメーション GLB（VRM 拡張なし）は、
+        // 世界座標が右手系 Y-up（前方 +Z、要件 8.3）なのでカメラ（+Z 側）を向いており、回転しない。
+        // 以前は 3D 変換の 180°反転をここで打ち消していた（tasks 18）。
         const vrm = (gltf as any).userData?.vrm
         if (vrm) {
-          vrm.scene.rotation.y = Math.PI
-        } else {
-          model.rotation.y = Math.PI
+          VRMUtils.rotateVRM0(vrm)
         }
 
         // アニメーション
