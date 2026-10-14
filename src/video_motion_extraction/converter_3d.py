@@ -30,6 +30,25 @@ from video_motion_extraction.validators import validate_output_path
 from video_motion_extraction.videopose3d_model import load_videopose3d_model
 
 
+def camera_to_world(positions: np.ndarray) -> np.ndarray:
+    """カメラ座標を世界座標（右手系・Y-up）に変換する.
+
+    VideoPose3D の出力はカメラ座標（X=右、Y=下、Z=奥）。X 軸まわりに 180° 回転し
+    ``(x, y, z) → (x, -y, -z)`` とする。行列式 +1 の回転なので左右は入れ替わらず、
+    カメラに正対した人物の前方が +Z、人物の左が +X になる（要件 8.3, 8.4）。
+
+    Args:
+        positions: (..., 3) の関節位置
+
+    Returns:
+        変換後の関節位置（入力と同じ形状の新しい配列）
+    """
+    world = np.array(positions, copy=True)
+    world[..., 1] = -world[..., 1]
+    world[..., 2] = -world[..., 2]
+    return world
+
+
 class Converter3D:
     """2Dポーズデータを3Dモーションデータに変換するクラス."""
 
@@ -243,8 +262,9 @@ class Converter3D:
         positions_3d[:, :, 0] += hip_2d_trajectory[:, 0:1] * rms
         positions_3d[:, :, 1] += hip_2d_trajectory[:, 1:2] * rms
 
-        # Y軸反転: VideoPose3Dは Y-down（画像座標系）→ Y-up
-        positions_3d[:, :, 1] = -positions_3d[:, :, 1]
+        # カメラ座標（Y-down・Z-奥）→ 世界座標（右手系 Y-up）。X軸まわり180°回転
+        # （Y だけの反転は鏡像になり、左右が入れ替わる）
+        positions_3d = camera_to_world(positions_3d)
 
         # Y軸を上方向に補正: 最小Y=0（足が地面に接地）
         y_min = np.min(positions_3d[:, :, 1])
@@ -482,17 +502,16 @@ class Converter3D:
         # よって: bvh_loc = child_world - root_world（ルート相対位置）
         for frame in motion_data.frames:
             values: List[str] = []
-            # ルート: 絶対位置 + 回転(0固定)
-            # X反転: BVHインポータのY-up→Z-up変換がXを反転するため補正
+            # ルート: 絶対位置 + 回転(0固定)。世界座標のまま書く（要件 8.5）
             root_pos = frame.positions[root_idx]
-            values.extend([f"{-root_pos[0]:.6f}", f"{root_pos[1]:.6f}", f"{root_pos[2]:.6f}"])
+            values.extend([f"{root_pos[0]:.6f}", f"{root_pos[1]:.6f}", f"{root_pos[2]:.6f}"])
             values.extend(["0.000000", "0.000000", "0.000000"])
 
             # 子関節: ルートからの相対位置
             for jname in joint_names[1:]:
                 idx = name_to_idx[jname]
                 rel = frame.positions[idx] - root_pos
-                values.extend([f"{-rel[0]:.6f}", f"{rel[1]:.6f}", f"{rel[2]:.6f}"])
+                values.extend([f"{rel[0]:.6f}", f"{rel[1]:.6f}", f"{rel[2]:.6f}"])
 
             lines.append(" ".join(values))
 
@@ -529,10 +548,8 @@ class Converter3D:
         def _bone_offset(child: str, parent: str) -> np.ndarray:
             ci = name_to_idx.get(child, 0)
             pi = name_to_idx.get(parent, 0)
-            offset = first_frame.positions[ci] - first_frame.positions[pi]
-            # X反転: BVHインポータのY-up→Z-up変換がXを反転するため補正
-            offset[0] = -offset[0]
-            return offset
+            # 世界座標のまま（要件 8.5）
+            return first_frame.positions[ci] - first_frame.positions[pi]
 
         lines: List[str] = ["HIERARCHY"]
 
@@ -575,10 +592,10 @@ class Converter3D:
 
         for frame in motion_data.frames:
             values: List[str] = []
-            # ルートの位置（X反転: BVH補正）
+            # ルートの位置（世界座標のまま。要件 8.5）
             root_idx = name_to_idx.get(root, 0)
             pos = frame.positions[root_idx]
-            values.extend([f"{-pos[0]:.6f}", f"{pos[1]:.6f}", f"{pos[2]:.6f}"])
+            values.extend([f"{pos[0]:.6f}", f"{pos[1]:.6f}", f"{pos[2]:.6f}"])
 
             # 全関節の回転（ZXY Euler）
             for joint in ordered_joints:
@@ -624,8 +641,8 @@ class Converter3D:
 
         for frame in motion_data.frames:
             pos = frame.positions[0] if frame.positions.shape[0] > 0 else np.zeros(3)
-            # X反転: BVHインポータのY-up→Z-up変換がXを反転するため補正
-            values = [f"{-pos[0]:.4f}", f"{pos[1]:.4f}", f"{pos[2]:.4f}"]
+            # 世界座標のまま（要件 8.5）
+            values = [f"{pos[0]:.4f}", f"{pos[1]:.4f}", f"{pos[2]:.4f}"]
             for _ in range(frame.rotations.shape[0]):
                 values.extend(["0.0000", "0.0000", "0.0000"])
             lines.append(" ".join(values))

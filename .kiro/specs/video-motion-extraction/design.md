@@ -279,6 +279,7 @@ VideoPose3D推論出力 (Hip相対, Y-down)
 - 世界座標は右手系・Y-up。カメラに正対した人物の前方 = +Z、人物の左 = +X（骨盤レスト姿勢と同じ）
 - `converter_3d.camera_to_world(positions)` が `(x, y, z) → (x, -y, -z)` を行う（行列式 +1 の回転。左右の利き手性を保つ）
 - BVH（position / rotation / flat）は世界座標をそのまま書く。軸反転はしない
+- Web UI の `VrmViewer` は、VRM 0.x ファイル（-Z 向き）だけを 180°回転する。`retarget_bvh_to_vrm.py` のアニメーション GLB は前方 +Z なので回転しない
 - 2026-10-14 以前は Y だけを反転（鏡映）し、BVH 書き出しで X を反転していた。鏡映2回で左右は戻るが、人物が鉛直軸まわりに 180° 回った向きになり、rotation モードでは OFFSET だけ反転して回転は反転しないため骨の向きが食い違っていた
 
 **ルートモーション復元アルゴリズム**:

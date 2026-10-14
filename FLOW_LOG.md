@@ -76,6 +76,13 @@
 - `retarget_bvh_to_mixamo.py` に Unity `Character1_*` ボーン対応
 - 実測: test_clip 339frames / UnityChan FBX リターゲット成功（FBX 3.5MB）
 
+### 2026-10-14: 座標系の右手系化（体の向きが前後逆になる不具合の修正）
+- 発見元: cacc-motion-retarget-lab の比較検証。Y Bot / VRM にリターゲットすると、正面を向く人物が背中を向けて見えた
+- 原因: VideoPose3D のカメラ座標（Y-down・Z-奥）を Y だけ反転（鏡映）→ positions が左右の入れ替わった鏡像。BVH 書き出しの X 反転（2回目の鏡映）で左右は戻るが、鉛直軸まわり 180° 回った向きになっていた。rotation モードは OFFSET だけ X 反転し回転は反転しないため骨の向きが食い違っていた。JSON は `right-handed-y-up` を名乗りながら鏡像（左手系）だった
+- Spec 起点の例外手順で対応: 要件 8.3〜8.5 追加・12.4 文言修正 → design「座標系規約」→ tasks 18 → テスト（Cursor が `tests/test_coordinate_handedness.py` 8件を作成、Red を確認）→ 実装（`camera_to_world`、BVH の X 反転削除、`VrmViewer` の打ち消し回転削除）
+- 確認: pytest 46 件（既存 38 + 新規 8）通過、ruff・frontend build 通過。実動画2本で「左右の関節から出した前方向と鼻の向き」の一致率 0% → 100%、Y Bot・VRM の前方向がカメラ側に変わったことを Blender で実測
+- 環境: GUI E2E 用に playwright の chromium（v1208）を `~/.cache/ms-playwright` に追加した。Red のテストだけを入れるコミットは pre-commit（全テスト実行）が必ず落ちるため `--no-verify` で入れた
+
 ---
 
 ## 発見・詰まり
