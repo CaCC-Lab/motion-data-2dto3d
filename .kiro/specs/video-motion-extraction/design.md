@@ -909,3 +909,9 @@ demo.launch(server_name="0.0.0.0", server_port=7860)
 
 - 対応させるのはリターゲットが使う 18 本だけ。指・しっぽ・揺れ物・表情は対象外（従来どおり動かない）
 - `upperChest` の無い VRM では、従来どおり背骨のねじれを spine と chest だけに分ける
+
+## 首の向きの基準（要件 20）
+
+- 首の骨（VRM の `J_Bip_C_Neck`、Mixamo の `Neck`）は、基本姿勢で体幹とほぼ同じ上向き。リターゲットは首の骨をワールド座標の目標の向きに合わせる（`compute_limb_rotation`）
+- 目標の向きは「Thorax → Head（頭頂）」にする。「Thorax → Nose」は前を向いていても大きく前に倒れるので、予備（Head が無いとき）に回す
+- 判断は `src/video_motion_extraction/retarget_rules.py` の `neck_direction(positions)` に置く。bpy・mathutils に依存しない（関節名 → 長さ 3 の座標、を受け取り、長さ 3 のタプルか None を返す）。Blender スクリプトはファイルから直接読み込み、結果を `Vector` にする
