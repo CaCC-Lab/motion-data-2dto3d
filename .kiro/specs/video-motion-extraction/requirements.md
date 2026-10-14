@@ -239,3 +239,4 @@
 6. WHEN 骨名がすでに VRoid 式の場合 THEN `vrm_bone_map` SHALL その骨を付け替え対象に含めない（VRoid Studio 製 VRM の結果は従来と同じ）
 7. WHEN VRM アドオンで読み込んだ場合 THEN `retarget_bvh_to_vrm.py` SHALL アドオンが読み込み時に作る humanoid の対応表（ノードと Blender の骨の対応）を使い、無い場合は VRM ファイルの JSON から読む
 8. THE `retarget_bvh_to_vrm.py` SHALL 付け替え結果（付け替えた数、付け替え後も見つからない骨、よけた骨）をログに出す。元の VRM ファイルは書き換えない
+9. WHEN humanoid を取得できない場合（VRM 拡張の無い GLB 等） THEN `retarget_bvh_to_vrm.py` SHALL 警告をログに出して付け替えを省き、改修前と同じく処理を続ける

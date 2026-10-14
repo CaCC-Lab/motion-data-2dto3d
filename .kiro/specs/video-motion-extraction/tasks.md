@@ -345,7 +345,8 @@
   - [x] 19.3 実装（Claude Code）
     - `src/video_motion_extraction/vrm_bone_map.py` を追加
     - `blender_scripts/retarget_bvh_to_vrm.py`: `import_vrm` の直後に骨名を付け替える（`normalize_bone_names`）
-    - _Requirements: 19.1〜19.8_
+    - humanoid を取得できないときは警告を出して付け替えを省く（19.9）
+    - _Requirements: 19.1〜19.9_
 
 ## 備考
 

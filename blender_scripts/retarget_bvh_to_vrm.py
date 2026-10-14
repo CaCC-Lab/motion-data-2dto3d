@@ -117,7 +117,12 @@ def normalize_bone_names(vrm_arm, path: str) -> None:
     if all(vrm_arm.data.bones.get(name) is not None for name in expected):
         print("  Bone rename: already VRoid Studio names, nothing to do")
         return
-    humanoid = humanoid_from_vrm(vrm_arm, path)
+    try:
+        humanoid = humanoid_from_vrm(vrm_arm, path)
+    except ValueError as exc:
+        # VRM 拡張の無い GLB など。改修前と同じく、付け替えずに先へ進む
+        print(f"  Bone rename: skipped ({exc})")
+        return
     renames = {
         old: new
         for old, new in vrm_bone_map.rename_map(humanoid).items()
