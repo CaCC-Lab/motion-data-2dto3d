@@ -240,3 +240,16 @@
 7. WHEN VRM アドオンで読み込んだ場合 THEN `retarget_bvh_to_vrm.py` SHALL アドオンが読み込み時に作る humanoid の対応表（ノードと Blender の骨の対応）を使い、無い場合は VRM ファイルの JSON から読む
 8. THE `retarget_bvh_to_vrm.py` SHALL 付け替え結果（付け替えた数、付け替え後も見つからない骨、よけた骨）をログに出す。元の VRM ファイルは書き換えない
 9. WHEN humanoid を取得できない場合（VRM 拡張の無い GLB 等） THEN `retarget_bvh_to_vrm.py` SHALL 警告をログに出して付け替えを省き、改修前と同じく処理を続ける
+
+### 要件 20: リターゲット後の首の向き（うつむきの修正）
+
+**ユーザーストーリー:** ユーザーとして、動きを付けたキャラクターが、元の動画の人と同じように前を向いてほしい。これにより、顔が見える自然な動きになる。
+
+背景: `retarget_bvh_to_vrm.py` と `retarget_bvh_to_mixamo.py` は、首の骨を「Thorax → Nose」の向きに合わせていた。H36M の Nose は首の付け根より前にあるので、前を向いて立っていても、この向きは体幹より大きく前に倒れる（VideoPose3D の出力で、体幹との差の中央値 46〜75°）。首の骨は基本姿勢で体幹とほぼ同じ上向きなので、キャラクターが常にうつむいていた。「Thorax → Head（頭頂）」は体幹との差が -3〜+20° で、首の向きに近い。
+
+#### 受け入れ基準
+
+1. THE `retarget_rules.neck_direction` SHALL 関節位置の対応（関節名 → 3 次元座標）から、首の骨を合わせる向きを「Thorax → Head」の単位ベクトルで返す
+2. WHEN Head が無い、または Thorax と Head が同じ位置の場合 THEN `neck_direction` SHALL 「Thorax → Nose」の単位ベクトルを返す
+3. WHEN Thorax が無い、または使える向きが無い場合 THEN `neck_direction` SHALL None を返し、例外を送出しない
+4. THE `retarget_bvh_to_vrm.py` と `retarget_bvh_to_mixamo.py` SHALL 首の骨を `neck_direction` の向きに合わせる

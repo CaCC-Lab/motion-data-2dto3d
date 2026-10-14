@@ -348,6 +348,17 @@
     - humanoid を取得できないときは警告を出して付け替えを省く（19.9）
     - _Requirements: 19.1〜19.9_
 
+- [x] 20. リターゲット後の首の向き（うつむきの修正）
+  - [x] 20.1 Spec 追加（要件 20、design「首の向きの基準」）
+  - [x] 20.2 テスト追加（Cursor）: `tests/test_retarget_rules.py`
+    - Thorax → Head を優先する、Head が無い・同じ位置なら Thorax → Nose、Thorax が無ければ None
+    - 返す向きは単位ベクトル
+    - _Requirements: 20.1〜20.3_
+  - [x] 20.3 実装（Claude Code）
+    - `src/video_motion_extraction/retarget_rules.py` を追加
+    - `blender_scripts/retarget_bvh_to_vrm.py`・`retarget_bvh_to_mixamo.py` の首を `neck_direction` に合わせる
+    - _Requirements: 20.1〜20.4_
+
 ## 備考
 
 - `*` マーク付きのタスクはオプションであり、MVP実装時にはスキップ可能
