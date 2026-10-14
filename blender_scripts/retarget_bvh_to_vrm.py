@@ -14,13 +14,31 @@ v7.4リターゲティング:
 - 四肢: compute_limb_rotation（parent_posed @ rest_offset逆 → rotation_difference）
 - 処理順序: Hips → Spine chain → Neck → Shoulder → UpperArm → LowerArm
 - 各レベル間でdepsgraph更新
+- VRoid Studio 以外の VRM: 読み込み直後に humanoid に従って骨名を J_Bip_* へ付け替える（要件 19）
 """
 
 import argparse
+import importlib.util
 import sys
+from pathlib import Path
 
 import bpy
 from mathutils import Matrix, Quaternion, Vector
+
+
+def _load_vrm_bone_map():
+    """src/video_motion_extraction/vrm_bone_map.py をファイルから直接読み込む.
+
+    パッケージの __init__ は torch などを読み込むので、Blender の Python には持ち込まない。
+    """
+    path = Path(__file__).resolve().parent.parent / "src" / "video_motion_extraction" / "vrm_bone_map.py"
+    spec = importlib.util.spec_from_file_location("vrm_bone_map", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+vrm_bone_map = _load_vrm_bone_map()
 
 
 def parse_args():
@@ -69,6 +87,58 @@ def import_vrm(path: str):
     if len(armatures) >= 2:
         return armatures[-1]
     raise RuntimeError("VRM Armature not found")
+
+
+def humanoid_from_vrm(vrm_arm, path: str) -> dict:
+    """humanoid 名 → Blender の骨名.
+
+    VRM アドオンで読み込んだときは、アドオンがノードと骨を対応させた結果を使う。
+    それ以外は VRM ファイルの JSON から読む。
+    """
+    ext = getattr(vrm_arm.data, "vrm_addon_extension", None)
+    if ext is not None:
+        if ext.spec_version == "1.0":
+            human_bones = ext.vrm1.humanoid.human_bones
+            found = {
+                h: getattr(human_bones, vrm_bone_map.snake_name(h)).node.bone_name
+                for h in vrm_bone_map.USED_BONES
+            }
+        else:
+            found = {b.bone: b.node.bone_name for b in ext.vrm0.humanoid.human_bones}
+        found = {h: name for h, name in found.items() if name}
+        if found:
+            return found
+    return vrm_bone_map.humanoid_bones(vrm_bone_map.read_gltf_json(Path(path)))
+
+
+def normalize_bone_names(vrm_arm, path: str) -> None:
+    """骨名を humanoid に従って VRoid 式（J_Bip_*）へ付け替える. VRM ファイルは書き換えない."""
+    expected = [vrm_bone_map.jbip_name(h) for h in vrm_bone_map.USED_BONES if h != "upperChest"]
+    if all(vrm_arm.data.bones.get(name) is not None for name in expected):
+        print("  Bone rename: already VRoid Studio names, nothing to do")
+        return
+    humanoid = humanoid_from_vrm(vrm_arm, path)
+    renames = {
+        old: new
+        for old, new in vrm_bone_map.rename_map(humanoid).items()
+        if vrm_arm.data.bones.get(old) is not None
+    }
+    steps, moved = vrm_bone_map.plan_renames(renames, [b.name for b in vrm_arm.data.bones])
+    for old, new in steps:
+        vrm_arm.data.bones[old].name = new  # Blender が頂点グループ名も合わせて付け替える
+        if vrm_arm.data.bones.get(new) is None:
+            raise RuntimeError(
+                f"what: bone rename {old} -> {new} failed / why: Blender gave the bone another name "
+                "/ how: check for a bone already using that name and report it with the VRM file"
+            )
+    for old, alt in moved:
+        print(f"  Bone rename: non-humanoid bone {old} moved to {alt}")
+    missing = [
+        vrm_bone_map.jbip_name(h)
+        for h in vrm_bone_map.USED_BONES
+        if vrm_arm.data.bones.get(vrm_bone_map.jbip_name(h)) is None
+    ]
+    print(f"  Bone rename: {len(renames)} renamed; missing: {missing or 'none'}")
 
 
 def get_bvh_positions(bvh_arm, frame: int):
@@ -344,6 +414,7 @@ def main():
     print("Importing VRM...")
     vrm_arm = import_vrm(args.vrm)
     print(f"  VRM: {vrm_arm.name} ({len(vrm_arm.pose.bones)} bones)")
+    normalize_bone_names(vrm_arm, args.vrm)
 
     for bone in vrm_arm.pose.bones:
         bone.rotation_mode = "QUATERNION"

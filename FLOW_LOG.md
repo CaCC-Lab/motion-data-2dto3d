@@ -83,6 +83,12 @@
 - 確認: pytest 46 件（既存 38 + 新規 8）通過、ruff・frontend build 通過。実動画2本で「左右の関節から出した前方向と鼻の向き」の一致率 0% → 100%、Y Bot・VRM の前方向がカメラ側に変わったことを Blender で実測
 - 環境: GUI E2E 用に playwright の chromium（v1208）を `~/.cache/ms-playwright` に追加した。Red のテストだけを入れるコミットは pre-commit（全テスト実行）が必ず落ちるため `--no-verify` で入れた
 
+### 2026-10-15: VRoid Studio 以外で作った VRM へのリターゲティング（要件 19）
+- 発見元: cacc-motion-retarget-lab で、Blender の VRM アドオンで作った VRM（骨名が `hips`・`upper_arm.L` など）に動きを付けると、腰も手足も動かなかった。`retarget_bvh_to_vrm.py` が骨を VRoid Studio の名前（`J_Bip_*`）で探すため
+- 対応: 要件 19・design・tasks 19 → テスト（Cursor が `tests/test_vrm_bone_map.py` を作成、Red を確認）→ 実装（`src/video_motion_extraction/vrm_bone_map.py`、`retarget_bvh_to_vrm.py` の `normalize_bone_names`）。VRM を読み込んだ直後に humanoid に従って骨名を付け替える。VRM アドオンで読み込んだときはアドオンの対応表を使う（ノード名の省略・重複に左右されない）。骨名がすでに VRoid 式なら何もしない
+- 確認: 新規テスト 40 件と、GPU を使わないテスト 85 件が通過。手持ちの VRM 3 体（VRM 1.0、VRoid 以外）で 17 本の骨を付け替え、ラボ版と同じ GLB（バイト一致）。`data/model/8828456829859603584.vrm`（VRoid Studio 製）は、VRM アドオンあり・なしの両方で改修前と同じ GLB（バイト一致）
+- 既知の問題: pre-commit（全テスト実行）の `tests/test_gui_e2e.py::test_gui_full_pipeline`（GPU）が、動画を入れて「実行」を押しても 180 秒以内に `Done!` にならず時間切れで落ちる。PR #26 の時点のコミット（bf8c90d）でも同じく落ちるので、今回の変更とは関係ない。動画は 1 秒で画面に入る。原因は未調査。人間の判断で、この PR のコミットは `--no-verify` で入れた
+
 ---
 
 ## 発見・詰まり
