@@ -105,6 +105,9 @@
 
 1. WHEN 出力フォーマットが指定された場合 THEN Converter_3D SHALL 指定されたフォーマット（BVH、FBX、JSON）でエクスポートする
 2. THE Converter_3D SHALL 出力データの座標系を指定されたフォーマットの規約に従わせる
+3. THE Converter_3D SHALL 世界座標を右手系・Y-up とし、カメラに正対した人物の前方を +Z、人物の左を +X とする（`estimate_pelvis_rotation` のレスト姿勢 X=left, Y=up, Z=forward と一致させる）
+4. THE Converter_3D SHALL カメラ座標から世界座標への変換を回転（X軸まわり180°: Y と Z の両方を反転）で行い、1軸だけを反転する鏡像変換を行わない
+5. WHEN BVH を出力する場合 THEN Converter_3D SHALL 位置チャンネル・OFFSET の軸を反転せず、世界座標のまま書き出す（Blender の BVH 読み込みは Y-up→Z-up の回転のみで軸反転を行わないため、補正は不要）
 
 ### 要件 9: GPUリソース管理
 
@@ -145,7 +148,7 @@
 1. WHEN 2DポーズがHip中心化されている場合 THEN Converter_3D SHALL 保存した2D Hip軌跡を3D出力に再注入してグローバル位置を復元する
 2. THE Converter_3D SHALL 単眼カメラの視差圧縮を補正するためのスケール係数（root_motion_scale）を適用する
 3. THE root_motion_scale SHALL CLIオプションとして設定可能である（デフォルト: 2.5、範囲: 0.1〜10.0）
-4. THE ルートモーション復元 SHALL 人体スケール正規化の後、Y軸反転の前に適用される
+4. THE ルートモーション復元 SHALL 人体スケール正規化の後、カメラ座標→世界座標変換（Y軸反転を含む）の前に適用される
 
 ### 要件 13: グローバル傾き補正
 
