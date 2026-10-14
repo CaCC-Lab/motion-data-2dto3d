@@ -875,3 +875,37 @@ demo.launch(server_name="0.0.0.0", server_port=7860)
 | `BLENDER_PATH` | Windows Blender 4.3 パス | Blender 実行ファイル |
 | `INTEGRATION_PORT` | `8090` | Integration API ポート |
 | `INTEGRATION_CORS_ORIGINS` | `localhost:5173` 等 | CORS 許可オリジン |
+
+## VRoid 以外の VRM の骨名対応（要件 19）
+
+### 方針
+
+リターゲット本体（骨を `J_Bip_*` の名前で探す処理）は変えず、VRM を読み込んだ直後に、骨の名前を humanoid の対応表に従って VRoid 式へ付け替える。付け替えは Blender のシーン上だけで行い、VRM ファイルは書き換えない。Blender は骨名を変えると頂点グループ名も合わせて変える。
+
+### コンポーネント
+
+| コンポーネント | ファイル | 役割 |
+|---|---|---|
+| Bone Map | `src/video_motion_extraction/vrm_bone_map.py` | humanoid の読み取り、VRoid 式の名前への対応、付け替え手順の作成。bpy に依存しない（単体テスト可能） |
+| Retarget Script | `blender_scripts/retarget_bvh_to_vrm.py` | `import_vrm` の直後に `normalize_bone_names` で付け替える。Bone Map はファイルパスから直接読み込む（パッケージの `__init__` の重い依存を Blender の Python に持ち込まない） |
+
+### 公開関数（Bone Map）
+
+| 関数 | 入力 → 出力 |
+|---|---|
+| `read_gltf_json(path)` | .vrm（GLB）→ JSON の dict。GLB でなければ `ValueError` |
+| `humanoid_bones(gltf)` | glTF の dict → humanoid 名 → ノード名。VRM 1.0 / 0.x 両対応 |
+| `jbip_name(humanoid)` | humanoid 名 → `J_Bip_*` 名。対象外は `None` |
+| `snake_name(humanoid)` | `leftUpperArm` → `left_upper_arm`（VRM アドオンのプロパティ名） |
+| `rename_map(humanoid)` | humanoid 名 → 骨名 の dict → 今の骨名 → 新しい骨名。すでに同じ名前のものは含めない |
+| `plan_renames(renames, existing)` | 付け替え表と今ある骨名の一覧 → (手順のリスト, よけた骨のリスト)。手順は ① 付け替え先を使っている対象外の骨を `<名前>_orig` へ ② 付け替える骨を仮の名前へ ③ 仮の名前から最終の名前へ |
+
+### humanoid の取得元
+
+1. VRM アドオンで読み込んだとき: `armature.data.vrm_addon_extension`。VRM 1.0 は `vrm1.humanoid.human_bones.<snake 名>.node.bone_name`、0.x は `vrm0.humanoid.human_bones[*].bone` / `.node.bone_name`。アドオンがノードと骨を対応させた結果なので、ノード名の省略・重複に左右されない
+2. それ以外（アドオンなしで glTF として読んだとき）: VRM ファイルの JSON。ノード名で骨を探すので、名前の無いノード・重複するノードは `ValueError`
+
+### 制約
+
+- 対応させるのはリターゲットが使う 18 本だけ。指・しっぽ・揺れ物・表情は対象外（従来どおり動かない）
+- `upperChest` の無い VRM では、従来どおり背骨のねじれを spine と chest だけに分ける
