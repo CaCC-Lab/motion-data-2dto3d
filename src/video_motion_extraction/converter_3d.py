@@ -375,6 +375,8 @@ class Converter3D:
             positions = np.zeros((num_joints, 3), dtype=np.float32)
             positions[:, 0] = frame_2d.keypoints[:, 0]
             positions[:, 1] = frame_2d.keypoints[:, 1]
+            # 2D 画像座標（Y-down）を実変換と同じ世界座標（右手系 Y-up）にそろえる（要件 8.3）
+            positions = camera_to_world(positions)
 
             rotations = np.zeros((num_joints, 4), dtype=np.float32)
             rotations[:, 0] = 1.0  # identity quaternion [w, x, y, z]
