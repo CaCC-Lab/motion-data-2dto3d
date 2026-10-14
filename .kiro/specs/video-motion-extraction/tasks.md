@@ -334,6 +334,20 @@
     - `frontend/src/components/VrmViewer.tsx`: VRM 拡張なしのアニメーション GLB に掛けていた 180°回転（旧データの反転を打ち消していた）を削除
     - _Requirements: 8.3, 8.4, 8.5, 12.4_
 
+- [x] 19. VRoid Studio 以外で作った VRM へのリターゲティング
+  - [x] 19.1 Spec 追加（要件 19、design「VRoid 以外の VRM の骨名対応」）
+  - [x] 19.2 テスト追加（Cursor）: `tests/test_vrm_bone_map.py`
+    - VRM 1.0 / 0.x の humanoid 読み取り、VRoid 式の名前への対応、対象外の骨は対応させない
+    - 名前の無いノード・重複・範囲外のノード番号・GLB でないファイルで what/why/how の `ValueError`
+    - 付け替え手順が途中で名前をぶつけない（別の付け替え対象が使っている名前、対象外の骨が使っている名前）
+    - すでに VRoid 式の名前の骨は付け替えない
+    - _Requirements: 19.1〜19.6_
+  - [x] 19.3 実装（Claude Code）
+    - `src/video_motion_extraction/vrm_bone_map.py` を追加
+    - `blender_scripts/retarget_bvh_to_vrm.py`: `import_vrm` の直後に骨名を付け替える（`normalize_bone_names`）
+    - humanoid を取得できないときは警告を出して付け替えを省く（19.9）
+    - _Requirements: 19.1〜19.9_
+
 ## 備考
 
 - `*` マーク付きのタスクはオプションであり、MVP実装時にはスキップ可能

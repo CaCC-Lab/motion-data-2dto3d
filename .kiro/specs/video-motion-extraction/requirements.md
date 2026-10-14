@@ -222,3 +222,21 @@
 5. WHEN Integration API が未起動の場合 THEN Web UI SHALL Integrate モードを無効化する
 6. THE システム SHALL `vme-integration` エントリポイントで Integration API を独立起動可能とする
 7. THE メイン FastAPI（`vme-web`）SHALL integration ルーターをマウントし、同一オリジンからフロントエンドが利用できる
+
+### 要件 19: VRoid Studio 以外で作った VRM へのリターゲティング
+
+**ユーザーストーリー:** ユーザーとして、VRoid Studio 以外（Blender の VRM アドオン、きゃらくる等）で作った VRM にも動きを付けたい。これにより、手持ちのオリジナルキャラクターをそのまま使える。
+
+背景: `retarget_bvh_to_vrm.py` は骨を VRoid Studio の名前（`J_Bip_C_Hips` 等）で探す。VRoid 以外の VRM は骨名が違う（例: `hips`、`upper_arm.L`）ため、腰も手足も動かない。VRM には humanoid（どの骨が hips か等の対応表）が必ず入っているので、それを使う。
+
+#### 受け入れ基準
+
+1. THE `vrm_bone_map` モジュール SHALL リターゲットが使う humanoid 骨（hips, spine, chest, upperChest, neck, head と左右の shoulder, upperArm, lowerArm, upperLeg, lowerLeg, foot の 18 本）を、VRoid 式の骨名（`J_Bip_C_Hips`、`J_Bip_L_UpperArm` 等）に対応させる。それ以外の humanoid 骨は対応させない
+2. THE `vrm_bone_map` モジュール SHALL VRM 1.0（`VRMC_vrm`）と VRM 0.x（`VRM`）の両方の humanoid を読み、humanoid 名 → 骨名の対応を返す
+3. WHEN humanoid の骨が、名前の無いノード・名前が重複するノード・存在しないノード番号を指す場合 THEN `vrm_bone_map` SHALL what/why/how を含む `ValueError` を送出する
+4. WHEN VRM ファイルが GLB でない場合 THEN `vrm_bone_map` SHALL what/why/how を含む `ValueError` を送出する
+5. THE `vrm_bone_map` モジュール SHALL 骨名の付け替え手順を、途中で名前がぶつからない順に返す。付け替え先の名前を対象外の骨が使っている場合は、その骨を `<名前>_orig` へ先によける
+6. WHEN 骨名がすでに VRoid 式の場合 THEN `vrm_bone_map` SHALL その骨を付け替え対象に含めない（VRoid Studio 製 VRM の結果は従来と同じ）
+7. WHEN VRM アドオンで読み込んだ場合 THEN `retarget_bvh_to_vrm.py` SHALL アドオンが読み込み時に作る humanoid の対応表（ノードと Blender の骨の対応）を使い、無い場合は VRM ファイルの JSON から読む
+8. THE `retarget_bvh_to_vrm.py` SHALL 付け替え結果（付け替えた数、付け替え後も見つからない骨、よけた骨）をログに出す。元の VRM ファイルは書き換えない
+9. WHEN humanoid を取得できない場合（VRM 拡張の無い GLB 等） THEN `retarget_bvh_to_vrm.py` SHALL 警告をログに出して付け替えを省き、改修前と同じく処理を続ける
