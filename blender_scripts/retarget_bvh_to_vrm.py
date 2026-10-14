@@ -26,19 +26,20 @@ import bpy
 from mathutils import Matrix, Quaternion, Vector
 
 
-def _load_vrm_bone_map():
-    """src/video_motion_extraction/vrm_bone_map.py をファイルから直接読み込む.
+def _load_src_module(name: str):
+    """src/video_motion_extraction/<name>.py をファイルから直接読み込む.
 
     パッケージの __init__ は torch などを読み込むので、Blender の Python には持ち込まない。
     """
-    path = Path(__file__).resolve().parent.parent / "src" / "video_motion_extraction" / "vrm_bone_map.py"
-    spec = importlib.util.spec_from_file_location("vrm_bone_map", path)
+    path = Path(__file__).resolve().parent.parent / "src" / "video_motion_extraction" / f"{name}.py"
+    spec = importlib.util.spec_from_file_location(name, path)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
 
 
-vrm_bone_map = _load_vrm_bone_map()
+vrm_bone_map = _load_src_module("vrm_bone_map")
+retarget_rules = _load_src_module("retarget_rules")
 
 
 def parse_args():
@@ -312,7 +313,9 @@ def retarget_frame(bvh_arm, vrm_arm, hips_rest_pos, frame: int):
     update_pose()
 
     # === Level 2: Neck ===
-    neck_dir = direction(pos, "Thorax", "Nose") or direction(pos, "Thorax", "Head")
+    # 首は Thorax → Head（頭頂）に合わせる。Thorax → Nose は前を向いていても大きく前に倒れる（要件 20）
+    neck = retarget_rules.neck_direction(pos)
+    neck_dir = Vector(neck) if neck else None
     if neck_dir:
         rot = compute_limb_rotation(vrm_arm, "J_Bip_C_Neck", neck_dir)
         set_bone_rot(vrm_arm, "J_Bip_C_Neck", rot, frame)

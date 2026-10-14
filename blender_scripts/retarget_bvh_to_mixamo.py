@@ -10,11 +10,25 @@ H36M BVH（motion-data-2dto3d 出力）の関節位置から、Mixamo互換リ�
 """
 
 import argparse
+import importlib.util
 import sys
+from pathlib import Path
 from typing import Dict, Optional
 
 import bpy
 from mathutils import Matrix, Quaternion, Vector
+
+
+def _load_src_module(name: str):
+    """src/video_motion_extraction/<name>.py をファイルから直接読み込む（パッケージの重い依存を避ける）."""
+    path = Path(__file__).resolve().parent.parent / "src" / "video_motion_extraction" / f"{name}.py"
+    spec = importlib.util.spec_from_file_location(name, path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+retarget_rules = _load_src_module("retarget_rules")
 
 # Mixamo ボーン名候補（mixamorig: / 無印 / Unity FBX の Character1_ ）
 MIXAMO_BONES = {
@@ -230,7 +244,9 @@ def retarget_frame(bvh_arm, target_arm, bones: dict, hips_rest_pos, frame: int):
 
     update_pose()
 
-    neck_dir = direction(pos, "Thorax", "Nose") or direction(pos, "Thorax", "Head")
+    # 首は Thorax → Head（頭頂）に合わせる。Thorax → Nose は前を向いていても大きく前に倒れる（要件 20）
+    neck = retarget_rules.neck_direction(pos)
+    neck_dir = Vector(neck) if neck else None
     if neck_dir:
         rot = compute_limb_rotation(target_arm, bones.get("neck", ""), neck_dir)
         set_bone_rot(target_arm, bones.get("neck"), rot, frame)
